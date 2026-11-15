@@ -77,11 +77,10 @@ with sync_playwright() as p:
     # Security policy and library fingerprints
     html = T.APP.read_text(encoding="utf-8")
     check("the page carries a security policy that only allows its own script and the services it uses",
-          "Content-Security-Policy" in html and "default-src 'none'" in html and "object-src 'none'" in html and "'unsafe-eval'" not in html and "script-src 'self' file: 'sha256-" in html)
-    import base64, hashlib, re as _re
-    body = _re.search(r"<script>(.*?)</script>", html, _re.S).group(1)
-    want = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
-    check("the policy's script hash matches the script (tools/csp.py was run)", f"'sha256-{want}'" in html)
+          "Content-Security-Policy" in html and "default-src 'none'" in html and "object-src 'none'" in html and "'unsafe-eval'" not in html and "script-src 'self' file: https://cdnjs.cloudflare.com;" in html)
+    import re as _re
+    check("the page has no inline script: all code is in js/calm-route.js, so the policy needs no fingerprint to keep in step",
+          not _re.search(r"<script>(?!\s*</script>)", html) and '<script src="js/calm-route.js"></script>' in html and "'sha256-" not in html)
     check("Leaflet is loaded with a fingerprint, so a tampered copy is refused",
           'leaflet.min.js" integrity="sha384-NElt3Op+9NBMCYaef5HxeJmU4Xeard/Lku8ek6hoPTvYkQPh3zLIrJP7KiRocsxO" crossorigin="anonymous"' in html
           and 'leaflet.min.css" integrity="sha384-c6Rcwz4e4CITMbu/NBmnNS8yN2sC3cUElMEMfP3vqqKFp7GOYaaBBCqmaWBjmkjb" crossorigin="anonymous"' in html)
@@ -151,7 +150,7 @@ with sync_playwright() as p:
     check("with the key, the map uses Stadia's tiles (with the key attached)", tl and all("tiles.stadiamaps.com/tiles/alidade_smooth/" in u and "api_key=" in u for u in tl), tl[:2])
     attr = page.text_content(".leaflet-control-attribution")
     check("the map credits Stadia, OpenMapTiles and OpenStreetMap contributors", all(w in attr for w in ("Stadia Maps", "OpenMapTiles", "OpenStreetMap contributors")), attr)
-    check("Esri's unlicensed tiles are gone", "arcgisonline" not in T.APP.read_text() and "Esri" not in attr)
+    check("Esri's unlicensed tiles are gone", "arcgisonline" not in T.all_source() and "Esri" not in attr)
     page.context.close()
     T.calls["tiles"] = []
     page = T.new_page(b, profile={}); page.wait_for_timeout(800)

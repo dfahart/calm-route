@@ -12,6 +12,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 APP = Path(__file__).resolve().parent.parent / "calm-route.html"
+ROOT = APP.parent
+def all_source():   # the page plus its stylesheet and script, for checks on what ships
+    return "".join((ROOT / f).read_text(encoding="utf-8") for f in ("calm-route.html", "css/calm-route.css", "js/calm-route.js"))
 LEAFLET = Path(__file__).resolve().parent / "node_modules/leaflet/dist"
 
 # ---------------------------------------------------------------- fake services
@@ -297,6 +300,10 @@ def install_routes(page):
             calls["signals"].append(url)
             if SIGNAL_FILE["body"] is None: return route.fulfill(status=404, body="not here")
             return route.fulfill(status=200, content_type="application/javascript", body=SIGNAL_FILE["body"])
+        if url.startswith("http://calm.test/css/") or url.startswith("http://calm.test/js/"):
+            rel = urllib.parse.urlparse(url).path.lstrip("/")
+            kind = "text/css" if rel.endswith(".css") else "application/javascript"
+            return route.fulfill(path=str(ROOT / rel), content_type=kind)
         if url.startswith("http://calm.test/"):
             # The test copy of Leaflet isn't byte-identical to cdnjs's, so its fingerprint check is taken off here
             # (section 48 checks the fingerprints themselves). Everything else, including the security policy, stays.
@@ -1152,7 +1159,7 @@ def run():
         calls["stadia"].clear(); calls["stadia_attrs"].clear(); calls["free"].clear()
         page = new_page(browser, profile={}, query=f"?stadiaKey={STADIA_KEY}")
         check("the key is saved in the browser and removed from the address bar", page.evaluate("localStorage.getItem('calmRouteStadiaKey')") == STADIA_KEY and "stadiaKey" not in page.url, page.url)
-        check("the key is not written into the page itself (map tile requests aside)", STADIA_KEY not in re.sub(r"<img[^>]*>", "", page.content()) and STADIA_KEY not in APP.read_text())
+        check("the key is not written into the page itself (map tile requests aside)", STADIA_KEY not in re.sub(r"<img[^>]*>", "", page.content()) and STADIA_KEY not in all_source())
         page.fill("#from", "42.2005, -85.6225"); page.wait_for_selector("#from-s [role=option]"); page.locator("#from-s [role=option]").first.dispatch_event("mousedown")
         type_and_pick(page, "to", "mcdonalds", 1)
         check("address search goes through Stadia and still finds the store", any(c.startswith("/geocoding/v1/autocomplete?key") for c in calls["stadia"]) and "McDonald" in page.input_value("#to"), page.input_value("#to"))

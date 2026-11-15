@@ -1,15 +1,9 @@
 {
-  "name": "test",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "name": "calm-route-tests",
+  "private": true,
+  "description": "Test-only copies of Leaflet (the map library) and axe-core (the accessibility checker). The app itself loads Leaflet from cdnjs.",
   "dependencies": {
+    "axe-core": "^4.10.0",
     "leaflet": "^1.9.4"
   }
 }
