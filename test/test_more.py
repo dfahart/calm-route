@@ -443,6 +443,21 @@ with sync_playwright() as p:
     page.wait_for_timeout(200)
     check("picking a start moves straight on to the destination box", page.evaluate("document.activeElement.id") == "to")
     page.context.close()
+    # A store name plus a street finds the store, not the street; Need food only picks true drive-thrus
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    got = page.evaluate("stadiaPlaces('Walmart Gull Road Kalamazoo', {lat:42.2, lon:-85.6}).then(r => r.items.map(i => i.main + ' | ' + i.sub))")
+    check("'Walmart Gull Road Kalamazoo' finds the Walmart on Gull Road, not the road or another Walmart", len(got) == 1 and got[0].startswith("Walmart Supercenter") and "Gull Road" in got[0], got)
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    T.STOP_AT[0], T.STOP_AT[1] = 0.0, 0.0
+    T.FOOD_AT[0], T.FOOD_AT[1] = page.evaluate("(() => { const s = state.sel.shape, c = state.sel.cum; return s[c.findIndex(x => x >= 1.0)]; })()")
+    T.FOOD_NAME["name"] = "Subway"
+    page.check("#needFood"); page.wait_for_function("/No drive-thru right on this route/.test($('status').textContent)", timeout=30000)
+    check("Need food doesn't pick a Subway (no drive-thru)", not page.evaluate("state.stops.length"), page.text_content("#status"))
+    page.click("#stopBox [data-stop=food]"); page.wait_for_selector("#stopList li", timeout=10000)
+    check("but the Food button still lists it", "Subway" in page.text_content("#stopList"))
+    T.FOOD_NAME["name"] = "Wendy's"; T.FOOD_AT[0] = T.FOOD_AT[1] = 0
+    check("no errors with the search and drive-thru fixes", not page.errors, page.errors)
+    page.context.close()
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];

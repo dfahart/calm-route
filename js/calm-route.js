@@ -630,6 +630,7 @@ async function stadiaItems(text, o){
   if (o.ref){ q.set('focus.point.lat', o.ref.lat); q.set('focus.point.lon', o.ref.lon); }
   if (o.km && o.ref){ q.set('boundary.circle.lat', o.ref.lat); q.set('boundary.circle.lon', o.ref.lon); q.set('boundary.circle.radius', String(o.km)); }
   if (o.country) q.set('boundary.country', o.country);
+  if (o.layers) q.set('layers', o.layers);
   const feats = await stadiaGet(`https://api.stadiamaps.com/geocoding/v1/${o.full ? 'search' : 'autocomplete'}`, q.toString());
   return feats.map(fromPelias);
 }
@@ -644,8 +645,24 @@ async function stadiaPlaces(raw, ref, wide){
   const near = !!ref && !ref.wide && !explicit, size = wide ? 25 : 10;
   const ask = (t, o) => stadiaItems(t, {size, ref, country:homeCountry, ...o});
   const both = async o => (await Promise.all((alias ? [alias + tail, text] : [text]).map(t => ask(t, o)))).flat();
-  let feats = [], corrected = null, scope = '';
-  for (const stage of near ? [{km: wide ? 250 : 120, name:'near'}, {name:'country'}] : [{name:'country'}]){
+  let feats = [], corrected = null, scope = '', brandWhere = false;
+  // "Walmart Gull Road Kalamazoo": a store name followed by where it is. A plain search returns the street
+  // (Gull Road), so look among stores first and keep those whose address has the words after the name.
+  if (!explicit && !isAddress){
+    const w = text.split(' '); let lead = null;
+    for (let n = Math.min(3, w.length - 1); n >= 1 && !lead; n--){
+      const b = BRANDS.find(b => squash(b) === squash(w.slice(0, n).join(' ')));
+      if (b) lead = {brand:squash(b).replace(/s$/, ''), rest:w.slice(n).map(squash).filter(x => x.length >= 3)};
+    }
+    if (lead && lead.rest.length){
+      const got = await stadiaItems(text, {size, ref, country:homeCountry, full:true, layers:'venue'}).catch(() => []);
+      const score = f => { const it = toItem(f, ref || null);
+        return squash(it.main).includes(lead.brand) ? lead.rest.filter(x => squash((it.sub || '') + ' ' + (it.full || '')).includes(x)).length : 0; };
+      const hits = got.map(f => ({f, s:score(f)})).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
+      if (hits.length){ feats = hits.filter(x => x.s === hits[0].s).map(x => x.f); scope = 'country'; brandWhere = true; }
+    }
+  }
+  if (!feats.length) for (const stage of near ? [{km: wide ? 250 : 120, name:'near'}, {name:'country'}] : [{name:'country'}]){
     feats = await both(stage); scope = stage.name;
     if (!feats.length && fuzzy){ feats = await ask(fuzzy + tail, stage); if (feats.length) corrected = fuzzy; }
     if (feats.length) break;
@@ -674,7 +691,7 @@ async function stadiaPlaces(raw, ref, wide){
     : alias && out.some(it => norm(it.main).includes(norm(alias))) ? `Including results for “${alias}”.`
     : scope === 'near' ? `Showing matches near ${label}. Add a city for somewhere else, like “Meijer, Grand Rapids”.`
     : scope === 'world' ? 'Nothing matched in your country, so these are from elsewhere.'
-    : explicit ? '' : ref ? `Nothing by that name near ${label}, so these are from further away.` : 'Use your location or add a city for closer matches.';
+    : explicit || brandWhere ? '' : ref ? `Nothing by that name near ${label}, so these are from further away.` : 'Use your location or add a city for closer matches.';
   const empty = out.length ? '' : `No match for “${raw.trim()}”. Check the spelling, or add a city, like “Meijer, Kalamazoo”.`;
   return {items: out.slice(0, wide ? 20 : 6), center:null, hint, empty, more: !wide && (scope === 'near' || feats.length >= size - 1)};
 }
@@ -2458,6 +2475,7 @@ const STOP_WORDS = {
   food:['McDonald\'s', 'Wendy\'s', 'Burger King', 'Taco Bell', 'Subway', 'Chick-fil-A', 'Culver\'s', 'Arby\'s', 'Panera', 'Chipotle']
 };
 const stopLimit = limiter(STADIA ? 4 : 2);   // brand searches a few at a time: a burst of 20-30 trips the services' fair-use limits
+const DRIVE_THRU = /mcdonald|wendy|burger king|taco bell|chick-fil-a|culver|arby|starbucks|biggby|dunkin|tim hortons/i;   // chains that reliably have a drive-thru
 const STOP_BAD = /\b(apartments?|school|church|parking|fire|police|station \d|department|car wash|headquarters|office|city of|county|township|village of|municipal|public works|dpw|fleet|streets?\s*(&|and)\s*equipment|garage|depot|yard|employees?|private|service center|maintenance|transit|airport)\b/i;   // government and fleet pumps aren't for the public
 const GENERIC_STOP = new Set(['Gas', 'Coffee']);   // a match on just the word, not a brand: listed for the driver to judge, never picked automatically
 const isBrand = (kind, name) => STOP_WORDS[kind].some(w => !GENERIC_STOP.has(w) && squash(name).includes(squash(w).replace(/s$/, '')));
@@ -2502,7 +2520,6 @@ async function findStops(kind, quiet){
     // A left-side station at a corner with a traffic light: turn left at the light, then right into the lot
     let atLight = false;
     if (!right && !atTurn && !onHw) for (let j = j0; j <= j1 && !atLight; j++) if (lightNear(r.shape[j]) === true) atLight = true;
-    const DRIVE_THRU = /mcdonald|wendy|burger king|taco bell|chick-fil-a|culver|arby|starbucks|biggby|dunkin|tim hortons/i;
     // Easy-stop score (lower is better): off the route costs most, then a highway exit, the left side,
     // being right at a turn, and going past the first 3 miles; drive-thru chains get a small bonus for food and coffee
     const score = n.d * 6 + (onHw ? 2.5 : 0) + (atTurn ? 0.5 : right ? 0 : atLight ? 0.6 : 1.5) + Math.max(0, at - 3) * 0.4 + at * 0.05
@@ -2567,7 +2584,7 @@ async function autoStopsOnce(){
   if (run !== state.runId || state.sel !== r || !$(AUTO[kind]).checked || hasKind(kind)) return;   // a newer search, or the driver changed their mind
   const noun = kind === 'gas' ? 'gas station' : 'drive-thru';
   // The automatic pick must be right on the road (about 150 yards): no side streets, nothing behind a corner
-  const near = list.filter(st => st.off <= 0.09 && st.brand).slice(0, 3);
+  const near = list.filter(st => st.off <= 0.09 && st.brand && (kind !== 'food' || DRIVE_THRU.test(st.main))).slice(0, 3);   // "Need food" promises a drive-thru: no Subway or Panera
   // ...and must really be on the way: a station on the highway route can be behind you on the calm one, so time
   // the real drive with it and without it, and skip any that add more than about 2 minutes (a backtrack always does)
   let best = null, tooFar = false;

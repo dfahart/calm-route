@@ -89,6 +89,9 @@ def stadia_special(q, path):
                pel("Shirley Court", 41.60, -72.70, "street", None, "Shirley Court", "Berlin", "Connecticut"),
                pel("8485 Shirley Court", 42.1953, -85.6168, "address", "8485", "Shirley Court", "Portage")]
     elif text in ("walmrt", "mcdonlads", "hosptial", "starbucks near grand rapids"): out = []
+    elif text == "walmart gull road kalamazoo":      # a store name plus where: plain search gives the street, a venue search gives the stores
+        out = ([pel("Walmart Supercenter", 42.1700, -85.6400, "venue", "8350", "Shaver Road", "Portage"), pel("Walmart Supercenter", 42.3167, -85.5306, "venue", "6065", "Gull Road", "Kalamazoo")]
+               if q.get("layers") == ["venue"] else [pel("Gull Road", 42.3100, -85.5400, "street", None, "Gull Road", "Kalamazoo")])
     elif text.startswith("walmart"): out = [pel("Walmart Supercenter", 42.2935, -85.6790, "venue", "501", "North 9th Street", "Kalamazoo")]
     elif text.startswith("hospital"): out = [pel("Bronson Methodist Hospital", 42.2870, -85.5800, "venue", "601", "John Street", "Kalamazoo")]
     elif text == "starbucks, grand rapids": out = [pel("Starbucks", 42.9634, -85.6681, "venue", "100", "Monroe Avenue", "Grand Rapids")]
@@ -99,12 +102,13 @@ def stadia_special(q, path):
                pel("Tiny Pocket Park", 42.2150, -85.6225, "venue", None, None, "Portage"),
                pel("Faraway Lake", 42.4900, -85.6225, "venue", None, None, "Plainwell")]
         calls["scenic"].append(dict((k, v[0]) for k, v in q.items() if k != "api_key"))
-    elif text in ("speedway", "shell", "marathon", "gas", "burger king", "coffee", "starbucks", "wendy's"):
+    elif text in ("speedway", "shell", "marathon", "gas", "burger king", "coffee", "starbucks", "wendy's", "subway"):
         out = {"speedway": [pel("Speedway", STOP_AT[0], STOP_AT[1], "venue", "100", "Main Street", "Portage"), pel("Speedway", 42.30, -85.70, "venue", None, None, "Kalamazoo")],
                "gas": [pel("Portage Fire Station #2", STOP_AT[0] + 0.0005, STOP_AT[1], "venue", None, None, "Portage")],
                "shell": [pel("Shell", LEFT_AT[0], LEFT_AT[1], "venue", None, None, "Portage")] if LEFT_AT[0] else [],
                "burger king": [pel("Jena King, FNP-C", STOP_AT[0], STOP_AT[1], "venue", None, None, "Portage")],
-               "wendy's": [pel("Wendy's", FOOD_AT[0], FOOD_AT[1], "venue", None, None, "Portage")] if FOOD_AT[0] else []}.get(text, [])
+               "wendy's": [pel("Wendy's", FOOD_AT[0], FOOD_AT[1], "venue", None, None, "Portage")] if FOOD_AT[0] and FOOD_NAME["name"] == "Wendy's" else [],
+               "subway": [pel("Subway", FOOD_AT[0], FOOD_AT[1], "venue", None, None, "Portage")] if FOOD_AT[0] and FOOD_NAME["name"] == "Subway" else []}.get(text, [])
     elif text.startswith("eiffel"): out = [pel("Eiffel Tower", 48.8584, 2.2945, "venue", None, "Avenue Anatole France", "Paris", "Ile-de-France", "FR", "France")]
     if out is None: return None
     if "boundary.country" in q: out = [f for f in out if f["properties"]["country_code"] == q["boundary.country"][0]]
@@ -270,6 +274,7 @@ NIGHT = {"on": False}       # quiet fake routes run through open country
 STOP_AT = [42.2198, -85.5862]   # where the fake gas station is (tests put it on the chosen route)
 LEFT_AT = [0, 0]                # a second station, on the left side (0 = none)
 FOOD_AT = [0, 0]                # a Wendy's (0 = none)
+FOOD_NAME = {"name": "Wendy's"}  # or "Subway": a food place with no drive-thru
 STOP_FIXES = {"on": False}
 DETOUR = {"on": False}         # when on, routing through the fake gas station adds 10 minutes      # when on, routing through the fake gas station alone keeps the app on the calm road
 HW_FOR_TRACE = {"last": True}
