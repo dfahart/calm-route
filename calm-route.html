@@ -5,7 +5,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Security: only this page's own script and the services listed here may run or be contacted. tools/csp.py stamps the script hash. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: 'sha256-+CsVpqRsv1/vP05yTn6+ORoRd4Ob9Ltsuhb4lQ60kyo=' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tiles.stadiamaps.com https://tile.openstreetmap.org https://cdnjs.cloudflare.com; connect-src https://api.stadiamaps.com https://valhalla1.openstreetmap.de https://photon.komoot.io https://api.weather.gov https://www.fueleconomy.gov; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: 'sha256-MeVA+N9VIOFb48QSTCsL2Wt+bpzADkDd7Y40O24W5Zo=' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tiles.stadiamaps.com https://tile.openstreetmap.org https://cdnjs.cloudflare.com; connect-src https://api.stadiamaps.com https://valhalla1.openstreetmap.de https://photon.komoot.io https://api.weather.gov https://www.fueleconomy.gov; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Calm Route</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -292,6 +292,7 @@
   .actionbar{display:none;padding:14px 24px 16px;border-top:1px solid var(--line);background:var(--mist)}
   .has-results .actionbar{display:block}
   .actionrow{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:14px;color:var(--sub);flex-wrap:wrap}
+  .optstoggle{display:none}
   .actionrow select{border:1px solid var(--line);border-radius:6px;background:var(--paper);padding:4px 6px}
   .actionrow .ghost{margin-left:auto}
   .alsoopen{margin:8px 2px 0;font-size:14px;color:var(--sub)}
@@ -370,6 +371,10 @@
     .actionrow .short{display:inline} .actionrow .long{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
     #pinsWrap{gap:6px} .actionrow select{max-width:118px}
     .alsoopen{margin-top:6px}
+    /* the app, pins and copy-link row folds away until asked for: the bar stays two lines tall */
+    .alsorow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .optstoggle{display:inline-flex !important;align-items:center;font-size:13px;padding:4px 12px;min-height:44px;min-width:44px;margin-top:4px}
+    .actionbar:not(.showopts) .actionrow, .actionbar:not(.showopts) .copybox{display:none !important}
   }
   @media (prefers-reduced-motion:reduce){ .progress i{transition:none} }
 </style>
@@ -546,15 +551,15 @@
         <p>Toll roads come from the same map data. Mark them “Never” and Calm Route asks for routes with no tolls at all. Fuel cost is an estimate: your car’s official EPA mpg (or numbers you type) and the US average gas price from fueleconomy.gov, checked twice a day, unless you type your own price.</p>
         <p>Dirt and gravel roads come from volunteer map data, which is patchy in rural areas. A road with no surface recorded is treated as paved, so “no unpaved roads” means none that the map knows about.</p>
         <p>Practice mode, pebbles and stone stacks are encouragement, not treatment. Drives are logged on your say-so, and everything stays in this browser.</p>
-        <p>Times are typical driving times and don't include live traffic. Routing by <a href="https://valhalla.github.io/valhalla/" target="_blank" rel="noopener">Valhalla</a> (FOSSGIS server), search by <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a>, road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.</p>
+        <p>Times are typical driving times and don't include live traffic. <span id="credRoute">Routing by <a href="https://valhalla.github.io/valhalla/" target="_blank" rel="noopener">Valhalla</a> (FOSSGIS server), search by <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a></span>, road data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.</p>
       </details>
     </div>
 
     <div class="actionbar">
       <a class="btn btn-primary" id="gmaps" href="#" target="_blank" rel="noopener">Open in Google Maps</a>
-      <p class="alsoopen" id="alsoOpen"></p>
+      <div class="alsorow"><p class="alsoopen" id="alsoOpen"></p><button class="ghost optstoggle" type="button" id="optsToggle" aria-expanded="false" aria-controls="actionRow">Settings</button></div>
       <p class="appnote" id="appNote"></p>
-      <div class="actionrow">
+      <div class="actionrow" id="actionRow">
         <label for="navApp"><span class="long">Navigation app</span><span class="short" aria-hidden="true">App</span></label>
         <select id="navApp"><option value="google">Google Maps</option><option value="apple">Apple Maps</option><option value="waze">Waze</option></select>
         <span id="pinsWrap"><label for="wpN"><span class="long">Pinned points, at most</span><span class="short" aria-hidden="true">Pins, max</span></label>
@@ -1379,7 +1384,8 @@ function setupField(key){
   const close = () => { items = []; idx = -1; empty = ''; render(); previewLayer.clearLayers(); };
   closers.push(() => { clearTimeout(timer); seq++; close(); });
   const choose = i => { const it = items[i]; if (!it) return; state[key] = it;
-    if (/^[A-Z]{2}$/.test(it.cc || '') && it.cc !== homeCountry){ homeCountry = it.cc; try { localStorage.setItem('calmRouteCountry', it.cc); } catch(e){} } inp.value = label(it); close(); tripChanged(); showEnds(); prefetch(); };
+    if (/^[A-Z]{2}$/.test(it.cc || '') && it.cc !== homeCountry){ homeCountry = it.cc; try { localStorage.setItem('calmRouteCountry', it.cc); } catch(e){} } inp.value = label(it); close(); tripChanged(); showEnds(); prefetch();
+    if (key === 'from' && !state.to && !$('to').value.trim()) $('to').focus(); };   // next step: where to
   inp.addEventListener('input', () => {
     state[key] = null; clearTimeout(timer); tripChanged(); showEnds(false);
     const q = inp.value.trim(); if (q.length < 3){ close(); return; }
@@ -2795,7 +2801,9 @@ $('sheet').addEventListener('keydown', e => {
   }
 });
 $('editProfile').onclick = openQuiz;
+$('optsToggle').onclick = () => { const on = $('optsToggle').closest('.actionbar').classList.toggle('showopts'); $('optsToggle').setAttribute('aria-expanded', on); };
 // Privacy and feedback: name the map service actually in use, and show the feedback link once there's an address
+if (STADIA) $('credRoute').innerHTML = 'Maps, routing and search by <a href="https://stadiamaps.com" target="_blank" rel="noopener">Stadia Maps</a> (Valhalla and Pelias)';
 $('privMap').textContent = STADIA ? 'Stadia Maps' : 'free OpenStreetMap demo servers: Valhalla, Photon and OpenStreetMap’s map pictures';
 if (FEEDBACK_EMAIL){
   $('feedbackLink').href = 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent('Calm Route feedback');

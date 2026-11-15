@@ -430,6 +430,20 @@ with sync_playwright() as p:
     check("a plain 'Gas' name is not a brand, so Need gas never picks it",
           page.evaluate("[isBrand('gas', 'Corner Gas'), isBrand('gas', 'Meijer Gas'), isBrand('gas', 'Speedway'), isBrand('coffee', 'Coffee Corner')]") == [False, True, True, False])
     page.context.close()
+    # Phone polish: the settings row folds away; picking a start moves on to the destination; credits name the service
+    page = T.new_page(b, profile={}, mobile=True, width=390, height=844, query=f"?stadiaKey={T.STADIA_KEY}")
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    check("on a phone the app/pins/copy-link row is folded away", not page.is_visible("#actionRow") and page.is_visible("#optsToggle"))
+    page.click("#optsToggle")
+    check("Settings opens it", page.is_visible("#actionRow") and page.get_attribute("#optsToggle", "aria-expanded") == "true")
+    check("the credits name Stadia when it's in use", "Stadia Maps" in page.text_content("#credRoute"))
+    page.context.close()
+    page = T.new_page(b, profile={})
+    check("on a computer the settings row is always shown, with no toggle", page.evaluate("getComputedStyle($('optsToggle')).display") == "none")
+    page.fill("#from", "42.2005, -85.6225"); page.wait_for_selector("#from-s [role=option]", timeout=10000); page.locator("#from-s [role=option]").first.dispatch_event("mousedown")
+    page.wait_for_timeout(200)
+    check("picking a start moves straight on to the destination box", page.evaluate("document.activeElement.id") == "to")
+    page.context.close()
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];
