@@ -1,0 +1,4 @@
+archive/
+test/node_modules/
+__pycache__/
+*.pyc

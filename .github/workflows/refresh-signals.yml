@@ -1,0 +1,65 @@
+# Rebuilds the traffic-light files from OpenStreetMap once a month and commits them if they changed.
+# Runs on GitHub once this project is hosted there; can also be started by hand from the Actions tab.
+name: Refresh traffic lights
+
+on:
+  schedule:
+    - cron: "17 6 3 * *"     # 06:17 UTC on the 3rd of each month
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1        # one request at a time: Overpass is a volunteer-run service
+      matrix:
+        region:
+          # id, then the rectangle south, west, north, east. The app treats everything inside the rectangle as
+          # covered, so always query the whole rectangle (never a state outline). Keep in step with
+          # SIGNAL_REGIONS in calm-route.html.
+          - { id: US-MI, bbox: "41.69 -90.42 48.31 -82.12" }
+          - { id: US-IN, bbox: "37.77 -88.10 41.77 -84.78" }
+          - { id: US-OH, bbox: "38.40 -84.82 41.98 -80.52" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download traffic lights
+        run: |
+          set -euo pipefail
+          read S W N E <<< "${{ matrix.region.bbox }}"
+          Q="[out:json][timeout:170];node($S,$W,$N,$E)[\"highway\"=\"traffic_signals\"];out skel qt;"
+          for server in https://overpass-api.de https://overpass.private.coffee; do
+            if curl -sS --fail --max-time 240 -A "CalmRoute-signal-refresh/1 (monthly)" \
+                 --data-urlencode "data=$Q" "$server/api/interpreter" -o raw.json; then break; fi
+            echo "$server failed, trying the next one"; sleep 30
+          done
+          python3 -c "import json; d=json.load(open('raw.json')); json.dump([[e['lat'], e['lon']] for e in d['elements']], open('points.json', 'w'))"
+
+      - name: Sanity check
+        run: |
+          # A broken download usually comes back nearly empty; never replace a good file with one
+          python3 - <<'EOF'
+          import json, sys
+          new = len(json.load(open("points.json")))
+          try:
+              old = json.loads(open("signals/${{ matrix.region.id }}.js").read().split("]=", 1)[1].rstrip().rstrip(";"))["n"]
+          except Exception:
+              old = 0
+          print(f"lights: was {old}, now {new}")
+          if new < 1000 or (old and new < old * 0.9):
+              sys.exit("Too few lights: keeping the old file.")
+          EOF
+
+      - name: Build
+        run: python3 tools/build_signals.py points.json ${{ matrix.region.id }} ${{ matrix.region.bbox }} signals
+
+      - name: Commit if changed
+        run: |
+          git config user.name "calm-route-bot"
+          git config user.email "calm-route-bot@users.noreply.github.com"
+          git add signals/
+          git diff --cached --quiet || git commit -m "Refresh traffic lights for ${{ matrix.region.id }}"
+          git push
