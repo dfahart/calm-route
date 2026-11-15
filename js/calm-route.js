@@ -2535,7 +2535,7 @@ const hasKind = k => state.stops.some(st => st.kind === k);
 // "Need gas" / "Need food": after the routes come in, stop at the easiest place near the start of the chosen route.
 // With both on, a gas station with a drive-thru right beside it (same lot or corner) becomes one stop for both.
 // Does the drive leave a stop back along the road it came in on? Miles of the first half-mile after the stop that run
-// within about 25 yards of the last half-mile before it. A real on-the-way stop retraces almost nothing.
+// within about 25 yards of the last half-mile before it. An on-the-way stop retraces only its own driveway.
 function doublesBack(inLeg, outLeg){
   const k = Math.cos(((inLeg[0] || [0])[0]) * Math.PI / 180), xy = p => [p[1] * 69.17 * k, p[0] * 69.17];
   const tail = [], head = [];
@@ -2549,7 +2549,7 @@ function doublesBack(inLeg, outLeg){
     if (d > 0.03 && tail.some(sg => segDist(mid, sg) < 0.014)) back += len;     // skip the first ~50 yards: pulling out of the lot
     d += len;
   }
-  return back > 0.06;
+  return back > 0.15;   // measured on real trips: pulling into a deep lot and out again retraces ~0.06 mi; a real turn-around, 0.45
 }
 let autoBusy = false, autoAgain = false, autoTimer = null;
 const queueAutoStops = () => { clearTimeout(autoTimer); autoTimer = setTimeout(autoStops, 350); };   // flipping both switches makes one search, so they can pair up
@@ -2572,17 +2572,17 @@ async function autoStopsOnce(){
   // the real drive with it and without it, and skip any that add more than about 2 minutes (a backtrack always does)
   let best = null, tooFar = false;
   if (near.length){
-    const t = state.trip, from = {lat:t.from.lat, lon:t.from.lon}, to = {lat:t.to.lat, lon:t.to.lon};
-    const drive = locs => polite(() => valhalla(API.route, {locations:locs, costing:'auto', costing_options:{auto:{use_highways:1, use_tolls:0.5, maneuver_penalty:5}}, directions_options:{units:'miles'}}))
-      .then(j => ({mins:j.trip.summary.time / 60, legs:j.trip.legs.map(l => decode(l.shape))}));
-    const base = await drive([from, to]).catch(() => null);
+    // Drive the chosen route's own way (same road preferences) through each candidate, and compare with the route
+    // as it stands. Keep the first that adds at most ~2 minutes and never doubles back.
+    const t = state.trip, v = VARIANTS.find(x => x.kind === r.kind) || VARIANTS[0];
+    const drive = c => polite(() => valhalla(API.route, routeBody(v, {...t, stops:[c]}, 0, false)))
+      .then(j => ({mins:j.trip.summary.time / 60, shape:j.trip.legs.flatMap(l => decode(l.shape))}));
     for (const c of near){
-      // Two checks on the real drive through the stop: it adds at most ~2 minutes, and it never doubles back
-      // (leaving the station back along the road you came in on, even for one block)
-      const v = base == null ? null : await drive([from, {lat:c.lat, lon:c.lon, type:'through'}, to]).catch(() => null);
+      const d = await drive(c).catch(() => null);
       if (run !== state.runId || state.sel !== r || !$(AUTO[kind]).checked || hasKind(kind)) return;
-      if (!v){ best = c; break; }                                // can't measure: trust the on-the-road check
-      if (v.mins - base.mins <= 2 && !(v.legs.length === 2 && doublesBack(v.legs[0], v.legs[1]))){ best = c; break; }
+      if (!d){ best = c; break; }                                // can't measure: trust the on-the-road check
+      const i = nearestOnShape(d.shape, [c.lat, c.lon]).i;       // a 'through' stop doesn't split the drive, so split it here
+      if (d.mins - r.mins <= 2 && !doublesBack(d.shape.slice(0, i + 1), d.shape.slice(i))){ best = c; break; }
       tooFar = true;
     }
   }

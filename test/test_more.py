@@ -447,14 +447,17 @@ with sync_playwright() as p:
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];
         const line = (a, b, n = 20) => Array.from({length:n + 1}, (_, i) => N(a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n));
-        // north 0.5 mi, then west a block to the station, then back east past the corner and on
-        const backIn = [...line([0, 0], [0.5, 0]), ...line([0.5, 0], [0.5, -0.15]).slice(1)], backOut = [...line([0.5, -0.15], [0.5, 0.6])];
+        // north 0.5 mi, then west 0.4 mi to the station, then back east past the corner and on (measured live: 0.45 mi retraced)
+        const backIn = [...line([0, 0], [0.5, 0]), ...line([0.5, 0], [0.5, -0.4]).slice(1)], backOut = [...line([0.5, -0.4], [0.5, 0.6], 40)];
+        // a deep parking lot: 100 yards in off the road and the same way out, then on (measured live: 0.06 mi retraced)
+        const lotIn = [...line([0, 0], [0.5, 0]), ...line([0.5, 0], [0.5, 0.06], 6).slice(1)], lotOut = [...line([0.5, 0.06], [0.5, 0], 6), ...line([0.5, 0], [1.0, 0]).slice(1)];
         // a station right on the road: east in, east out
         const onIn = line([0, -0.5], [0, 0]), onOut = line([0, 0], [0, 0.5]);
         // a station on the corner: north in, east out
         const cIn = line([-0.5, 0], [0, 0]), cOut = line([0, 0], [0, 0.5]);
-        return [doublesBack(backIn, backOut), doublesBack(onIn, onOut), doublesBack(cIn, cOut)]; })()""")
-    check("a stop a block past the corner (go, then come back the same way) counts as doubling back", r[0] is True, r)
+        return [doublesBack(backIn, backOut), doublesBack(onIn, onOut), doublesBack(cIn, cOut), doublesBack(lotIn, lotOut)]; })()""")
+    check("a stop that means driving away and turning around counts as doubling back", r[0] is True, r)
+    check("pulling into a deep parking lot and back out the same driveway does not", r[3] is False, r)
     check("a stop right on the road, or on the corner where you turn, does not", r[1] is False and r[2] is False, r)
     page.context.close()
     # With a stop set, the calm pick never turns around for it, even if that route scores calmer
