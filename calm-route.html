@@ -5,7 +5,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Security: only this page's own script and the services listed here may run or be contacted. tools/csp.py stamps the script hash. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: 'sha256-HkniJEh0LKpo5z9lerKEvDbbLJ8dZdzmdxNqsvoBJ5w=' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tiles.stadiamaps.com https://tile.openstreetmap.org https://cdnjs.cloudflare.com; connect-src https://api.stadiamaps.com https://valhalla1.openstreetmap.de https://photon.komoot.io https://api.weather.gov https://www.fueleconomy.gov; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: 'sha256-+CsVpqRsv1/vP05yTn6+ORoRd4Ob9Ltsuhb4lQ60kyo=' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tiles.stadiamaps.com https://tile.openstreetmap.org https://cdnjs.cloudflare.com; connect-src https://api.stadiamaps.com https://valhalla1.openstreetmap.de https://photon.komoot.io https://api.weather.gov https://www.fueleconomy.gov; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Calm Route</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -610,7 +610,7 @@
 // key), routing, road details and address search go to Stadia. Without one, the free demo servers are used:
 // fine for a single developer, not for real users. The key is never written into this file: open the app once
 // as calm-route.html?stadiaKey=YOUR-KEY and it is kept in this browser only.
-const STADIA_SITE = false;   // set to true once this page is hosted on a domain registered with Stadia
+const STADIA_SITE = location.hostname === 'dfahart.github.io';   // this domain is registered with Stadia: no key needed here (a copy opened elsewhere still needs ?stadiaKey=)
 let stadiaKey = '';
 try {
   const u = new URL(location.href), k = u.searchParams.get('stadiaKey');
