@@ -453,6 +453,7 @@ function centerOn(ll, z){
   map.setView(ll, z, {animate:false});
   const [l, b] = hidden(); if (l || b) map.panBy([-l / 2, b / 2], {animate:false});
 }
+centerOn([39.5, -96], 4);   // the opening view: the whole US, in the part of the map the panel doesn't cover
 // Map background. With the Stadia key: Stadia's quiet light style, covered by the paid plan. Without it (demo only):
 // OpenStreetMap's own tiles, which are fine for a little testing but not for real users.
 const OSM_CREDIT = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>';
