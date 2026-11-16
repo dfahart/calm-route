@@ -26,16 +26,23 @@ jobs:
           # id, then the rectangle south, west, north, east. The app treats everything inside the rectangle as
           # covered, so always query the whole rectangle (never a state outline). Keep in step with
           # SIGNAL_REGIONS in js/calm-route.js.
-          - { id: US-FL, bbox: "24.39 -87.64 31.01 -79.97" }
+          # pbf: download Geofabrik's state files instead of asking Overpass (list every state the rectangle touches)
+          - { id: US-FL, bbox: "24.39 -87.64 31.01 -79.97", pbf: "florida georgia alabama" }
           - { id: US-IN, bbox: "37.77 -88.10 41.77 -84.78" }
-          - { id: US-OH, bbox: "38.40 -84.82 41.98 -80.52" }
+          - { id: US-OH, bbox: "38.40 -84.82 41.98 -80.52", pbf: "ohio kentucky west-virginia pennsylvania indiana michigan" }
           - { id: US-MI, bbox: "41.69 -90.42 48.31 -82.12" }
     steps:
       - uses: actions/checkout@v4
 
       - name: Download traffic lights
         if: ${{ !inputs.only || inputs.only == matrix.region.id }}
-        run: python3 tools/fetch_signals.py ${{ matrix.region.bbox }} points.json
+        run: |
+          if [ -n "${{ matrix.region.pbf }}" ]; then
+            sudo apt-get install -y -qq osmium-tool
+            python3 tools/fetch_signals.py ${{ matrix.region.bbox }} points.json --pbf "${{ matrix.region.pbf }}"
+          else
+            python3 tools/fetch_signals.py ${{ matrix.region.bbox }} points.json
+          fi
 
       - name: Sanity check
         if: ${{ !inputs.only || inputs.only == matrix.region.id }}
