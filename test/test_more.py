@@ -769,6 +769,30 @@ with sync_playwright() as p:
     check("on a phone, the map credits stay visible above the sheet", page.evaluate("document.querySelector('.leaflet-control-attribution').getBoundingClientRect().bottom < document.querySelector('.panel').getBoundingClientRect().top"))
     check("no errors with the new look", not page.errors, page.errors)
     page.context.close()
+
+    # Pebbles are river stones: a heap, stacks with outlines for stones to come, keepsake stones, and a moment after each drive
+    init = "localStorage.setItem('calmRoutePractice', JSON.stringify({on:true, skill:'merge', pebbles:23, drives:14, levels:{merge:3,left:2,boxed:1,bridge:2,turns:4}, keepsakes:['first','merge','five']}));"
+    page = T.new_page(b, profile={}, init_script=init, query=f"?stadiaKey={T.STADIA_KEY}")
+    page.evaluate("$('pebbleCard').open = true"); page.wait_for_timeout(200)
+    check("the pebble card shows a little pile of stones", page.locator("#pebbleIcon svg use[href='#s1'], #pebbleIcon svg use[href='#s2'], #pebbleIcon svg use[href='#s4'], #pebbleIcon svg use[href='#s5']").count() >= 4)
+    check("the heap shows up to 13 stones and the count", page.locator("#pebbleHeap svg g").count() == 13 and page.text_content("#pebbleHeap .heapn") == "23")
+    check("each stack has its stones, with dashed outlines for the ones to come",
+          page.evaluate("[...document.querySelectorAll('#stacks .stack')].map(s => [s.querySelectorAll('use[fill^=\"url(#g-\"]:not([fill=\"url(#g-gloss)\"])').length, s.querySelectorAll('use[stroke-dasharray]').length])") == [[3, 2], [2, 3], [1, 4], [2, 3], [4, 1]])
+    check("found keepsakes are stones with a picture, plus one outline for the rest", page.locator("#keeps .keep:not(.missing)").count() == 3 and "7 more to find" in page.text_content("#keeps .keep.missing"))
+    check("the stone colours come from the page (no broken fills)", page.evaluate("['g-slate','g-sand','g-jade','g-rose','g-basalt','g-teal','g-apricot','g-gloss','g-glow','s1','s5'].every(id => document.getElementById(id))"))
+    page.evaluate("""practice.pending = {at:Date.now() - 9e5, to:'Walmart', name:'via Gull Rd', mins:22, practice:true, m:{merges:3, lefts:0, busy:0, bridges:0, turns:3}};
+        practice.fine = {merge:1}; practiceCfg.askAfter = 0; renderAsk();""")
+    page.click("#driveAsk [data-feel=fine]")
+    check("after a drive, the new stones land on the heap", page.locator("#driveAsk .earned .newstone").count() == 2 and "+2 pebbles" in page.text_content("#driveAsk .plus"))
+    check("a stack that grew shows its new stone", page.locator("#driveAsk .won .newstone").count() == 1 and "merges stack grew to 4 stones" in page.text_content("#driveAsk"), page.text_content("#driveAsk"))
+    check("no errors with the stones", not page.errors, page.errors)
+    page.context.close()
+    page = T.new_page(b, profile={}, init_script=init)
+    page.emulate_media(reduced_motion="reduce")
+    page.evaluate("""practice.pending = {at:Date.now() - 9e5, to:'Walmart', name:'x', mins:22, m:{}}; practiceCfg.askAfter = 0; renderAsk();""")
+    page.click("#driveAsk [data-feel=fine]")
+    check("with reduced motion, the new stone doesn't move", page.evaluate("getComputedStyle(document.querySelector('#driveAsk .newstone')).animationName") == "none")
+    page.context.close()
     b.close()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)} passed, {len(failed)} failed")

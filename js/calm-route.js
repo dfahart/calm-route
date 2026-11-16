@@ -2205,25 +2205,79 @@ function practicePick(budget){
   if (all.length) return {note:`A practice route for ${sk.long} needs +${fmtDur(Math.ceil(Math.min(...all.map(r => r.extra))))}. Showing the calmest route for the time you have.`};
   return {note:`No route on this trip is the right size of step for ${sk.long}, so this is the calmest one. Practice will be ready on another trip.`};
 }
-function stackSvg(level){
-  const fill = ['#5E717B', '#7FA88C', '#0B6E69', '#E8A25C', '#9AAAB1'], dx = [0, 2, -2, 1.5, -1];
-  let out = '';
+// ---- the stones: river-stone shapes and colours from the page's <svg class="stonedefs">
+const STONE_H = [0, 36, 32, 23, 34, 29];   // height of each stone shape, for stacking
+function stone(x, y, k, shape, color, rot = 0, cls = ''){
+  return `<g${cls ? ` class="${cls}"` : ''} transform="translate(${x} ${y}) rotate(${rot} 30 20) scale(${k})"><use href="#s${shape}" fill="url(#g-${color})"/><use href="#s${shape}" fill="url(#g-gloss)"/></g>`;
+}
+const ghostStone = (x, y, k, shape) => `<g transform="translate(${x} ${y}) scale(${k})"><use href="#s${shape}" fill="none" stroke="#AEBBB8" stroke-width="1.3" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/></g>`;
+const stoneShadow = (cx, cy, rx, ry) => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="url(#g-shadow)"/>`;
+// The heap of pebbles: up to 13 stones, filled from the middle of the bottom row up; the newest is apricot
+const HEAP = [[14,92,1.05,3,'basalt',-4],[70,96,1.1,5,'sand',3],[134,94,1.08,2,'slate',-2],[196,98,1,3,'jade',5],[244,96,.85,1,'rose',-6],
+  [40,66,.95,1,'jade',8],[98,62,1,4,'rose',-5],[158,64,1,2,'sand',4],[214,70,.9,5,'slate',-8],
+  [70,36,.9,2,'slate',-3],[128,34,.95,1,'teal',6],[184,40,.85,4,'basalt',-10],[112,6,.85,4,'teal',-6]];
+const HEAP_ORDER = [2, 1, 3, 6, 7, 10, 0, 4, 5, 8, 9, 11, 12];
+function heapSvg(n, fresh = 0){
+  const shown = HEAP_ORDER.slice(0, Math.max(1, Math.min(n, HEAP.length)));
+  const top = Math.min(...shown.map(i => HEAP[i][1])) - (fresh ? 30 : 6), h = 150 - top;
+  const body = shown.map((i, j) => { const [x, y, k, sh, c, r] = HEAP[i], isNew = j >= shown.length - Math.max(1, fresh);
+    return (isNew && fresh ? `<ellipse class="newglow" cx="${x + 30 * k}" cy="${y + 20 * k}" rx="${48 * k}" ry="${34 * k}" fill="url(#g-glow)"/>` : '')
+      + stone(x, y, k, sh, isNew ? 'apricot' : c, r, isNew && fresh ? 'newstone' : ''); }).join('');
+  return `<svg viewBox="0 ${top} 300 ${h}" width="300" height="${h}" aria-hidden="true">${stoneShadow(150, 136, 140, 14)}${body}</svg>`;
+}
+function miniPile(n){
+  const slots = [[16,24,.58,1,'sand',0],[2,18,.62,2,'slate',-4],[34,20,.6,5,'jade',6],[26,6,.5,4,'teal',-8]];
+  const shown = slots.slice(0, Math.max(1, Math.min(n, 4)));
+  return `<svg viewBox="0 0 76 52" width="76" height="52" aria-hidden="true">${stoneShadow(38, 46, 34, 5)}`
+    + shown.map(([x, y, k, sh, c, r], i) => stone(x, y, k, sh, i === shown.length - 1 ? 'apricot' : c, r)).join('') + '</svg>';
+}
+// A stack (cairn) for each skill: five flat stones, the ones still to come drawn as dashed outlines
+const STACK_COLORS = {merge:['teal','slate','sand','jade','rose'], left:['sand','jade','slate','rose','teal'], boxed:['slate','sand','basalt','jade','rose'],
+  bridge:['jade','rose','slate','sand','teal'], turns:['rose','basalt','sand','teal','slate']};
+function stackSvg(level, key = 'merge', grew = false){
+  const H = 110, shapes = [3, 5, 3, 5, 3], cols = STACK_COLORS[key] || STACK_COLORS.merge;
+  let y = H - 10, out = stoneShadow(32, H - 6, 28, 5);
   for (let i = 0; i < 5; i++){
-    const rx = 20 - i * 3.1, cy = 52 - i * 10.4, on = i < level;
-    out += `<ellipse cx="${24 + dx[i]}" cy="${cy}" rx="${rx}" ry="4.9" ${on ? `fill="${fill[i]}"` : 'fill="none" stroke="#C5D0D4" stroke-width="1.2" stroke-dasharray="2.5 2.5"'}/>`;
+    const k = 1 - i * 0.15, sh = shapes[i], hh = STONE_H[sh] * k, x = +(32 - 30 * k + (i % 2 ? -1.5 : 1.5)).toFixed(1), yt = y - hh, sy = +(yt - 3 * k).toFixed(1);
+    if (i < level){
+      if (grew && i === level - 1) out += `<ellipse class="newglow" cx="32" cy="${(yt + hh / 2).toFixed(1)}" rx="${(34 * k).toFixed(1)}" ry="${(hh * .9).toFixed(1)}" fill="url(#g-glow)"/>`;
+      out += stone(x, sy, +k.toFixed(2), sh, cols[i], i % 2 ? -3 : 3, grew && i === level - 1 ? 'newstone' : '');
+    } else out += ghostStone(x, sy, +k.toFixed(2), sh);
+    y = yt + hh * 0.2;
   }
-  return `<svg viewBox="0 0 48 60" aria-hidden="true">${out}</svg>`;
+  return `<svg viewBox="0 0 64 ${H}" aria-hidden="true">${out}</svg>`;
+}
+// Keepsakes are special stones with a little picture on them
+const KEEP_ICON = {
+  first:'<path d="M8 2 4 20M16 2l4 18M12 4v3M12 11v3M12 18v2"/>',
+  merge:'<path d="M4 20c0-8 8-10 8-18M20 20c0-6-5-8-7-11M12 2 9 5M12 2l3 3"/>',
+  left:'<path d="M16 21V12a4 4 0 0 0-4-4H5M8 4 4 8l4 4"/>',
+  bridge:'<path d="M2 18h20M4 18v-4a8 8 0 0 1 16 0v4M9 18v-5M15 18v-5"/>',
+  practice:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+  stack:'<path d="M5 19h14M7 15h10M9 11h6M10.5 7h3"/>',
+  five:'<circle cx="5" cy="8" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="19" cy="8" r="1.5"/><circle cx="8.5" cy="15" r="1.5"/><circle cx="15.5" cy="15" r="1.5"/>',
+  hw10:'<path d="M7 21 10 3M17 21 14 3M12 6v2M12 12v2M12 18v2"/>',
+  ten:'<path d="M6 7v12M4 9l2-2M12 13a4 6 0 1 0 8 0 4 6 0 1 0-8 0"/>',
+  p25:'<path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/>'};
+const KEEP_COLOR = ['teal', 'apricot', 'jade', 'rose', 'sand'];
+function keepStone(k, i, got){
+  const art = got ? stoneShadow(30, 38, 24, 4) + stone(0, 0, 1, 1, KEEP_COLOR[i % KEEP_COLOR.length])
+    + `<g transform="translate(18 9)" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${KEEP_ICON[k.id] || ''}</g>` : ghostStone(0, 0, 1, 1);
+  return `<svg viewBox="0 0 60 42" width="56" height="40" aria-hidden="true">${art}</svg>`;
 }
 function renderPebbles(){
   const n = practice.pebbles;
   $('pebbleCount').textContent = n ? plural(n, 'pebble') : 'Your pebbles';
-  $('pebbleSub').textContent = n ? `${plural(practice.drives, 'drive')} logged` + (practice.on ? ' · practice is on' : '') : (practice.on ? 'Practice is on. Log a drive to collect your first pebble.' : 'Collect one for every drive you log');
+  const psk = SKILLS.find(x => x.key === practice.skill);
+  $('pebbleSub').textContent = n ? `${plural(practice.drives, 'drive')} logged.` + (practice.on && psk ? ` ${psk.name} stack: ${levelOf(psk.key)} of 5.` : '') : (practice.on ? 'Practice is on. Log a drive to collect your first pebble.' : 'Collect a pebble for every drive you log');
+  $('pebbleIcon').innerHTML = miniPile(n);
+  $('pebbleHeap').innerHTML = heapSvg(n) + `<p class="heapn">${n}</p><p class="heaps">${n === 1 ? 'pebble' : 'pebbles'}${practice.drives ? ` from ${plural(practice.drives, 'drive')}` : ''}</p>`;
   $('pebbleState').textContent = $('pebbleCard').open ? 'Close' : 'Open';
   $('practiceOn').checked = !!practice.on;
   $('practiceSkill').innerHTML = SKILLS.map(sk => `<option value="${sk.key}"${sk.key === practice.skill ? ' selected' : ''}>${esc(sk.long[0].toUpperCase() + sk.long.slice(1))}</option>`).join('');
   $('practiceSkill').disabled = !practice.on;
   $('stacks').innerHTML = SKILLS.map(sk => { const L = levelOf(sk.key);
-    return `<div class="stack${practice.on && sk.key === practice.skill ? ' active' : ''}" data-skill="${sk.key}" data-level="${L}">${stackSvg(L)}<b>${sk.name}</b><span>${L} of 5<span class="sr"> stones</span></span></div>`; }).join('');
+    return `<div class="stack${practice.on && sk.key === practice.skill ? ' active' : ''}" data-skill="${sk.key}" data-level="${L}">${stackSvg(L, sk.key)}<b>${sk.name}</b><span>${L} of 5<span class="sr"> stones</span></span></div>`; }).join('');
   const t = practice.totals, bits = [];
   if (t.merges) bits.push(plural(t.merges, 'merge') + ' handled');
   if (t.lefts) bits.push(plural(t.lefts, 'tricky left turn', 'tricky left turns'));
@@ -2231,7 +2285,9 @@ function renderPebbles(){
   if (t.hwMiles >= 1) bits.push(`${Math.round(t.hwMiles)} highway miles`);
   $('pebbleTotals').textContent = bits.length ? 'So far: ' + bits.join(', ') + '.' : 'Each stack grows a stone when drives with a little more of that thing feel fine.';
   const got = KEEPSAKES.filter(k => practice.keepsakes.includes(k.id));
-  $('keeps').innerHTML = got.map(k => `<span class="keep">${esc(k.name)}</span>`).join('') + (got.length ? `<span class="ptext" style="margin:0;align-self:center">${KEEPSAKES.length - got.length} more keepsakes to find</span>` : '');
+  $('keeps').innerHTML = `<p class="keephead"><b>Keepsakes</b> <span>${got.length} of ${KEEPSAKES.length} found</span></p><div class="keepgrid">`
+    + KEEPSAKES.map((k, i) => got.includes(k) ? `<div class="keep">${keepStone(k, i, true)}<span>${esc(k.name)}</span></div>` : '').join('')
+    + (got.length < KEEPSAKES.length ? `<div class="keep missing">${keepStone(null, 0, false)}<span>${KEEPSAKES.length - got.length} more to find</span></div>` : '') + '</div>';
   $('pebbleReset').style.display = practice.drives || practice.levels ? '' : 'none';
 }
 $('pebbleCard').addEventListener('toggle', renderPebbles);
@@ -2258,7 +2314,11 @@ $('alsoOpen').addEventListener('click', e => { const a = e.target.closest('a'); 
 function renderAsk(done){
   const box = $('driveAsk'), p = practice.pending;
   if (done){ const sg = done.suggest;
-    box.hidden = false; box.innerHTML = `<h2>${esc(done.title)}</h2><p>${esc(done.text)}</p>`
+    box.hidden = false; box.innerHTML = `<h2>${esc(done.title)}</h2>` + (done.earned ? `<div class="earned">${heapSvg(practice.pebbles, done.earned)}`
+      + `<p class="plus">+${plural(done.earned, 'pebble')}</p>${done.why ? `<p class="why2">${esc(done.why)}</p>` : ''}</div>` : '')
+      + (done.text ? `<p>${esc(done.text)}</p>` : '')
+      + (done.grew || []).map(sk => `<div class="won">${stackSvg(levelOf(sk.key), sk.key, true)}<p><b>Your ${esc(sk.name.toLowerCase())} stack grew to ${levelOf(sk.key)} stones</b><span>${levelOf(sk.key)} of 5. Two fine drives in a row.</span></p></div>`).join('')
+      + (done.fresh || []).map(k => `<div class="won keepwon">${keepStone(k, KEEPSAKES.indexOf(k), true)}<p><b>New keepsake</b><span>${esc(k.name)}</span></p></div>`).join('')
       + (sg ? `<div class="suggest"><p>${esc(sg.text)}</p><button type="button" data-suggest="yes" data-k="${sg.key}">${esc(sg.yes)}</button> <button type="button" class="ghost" data-suggest="no" data-k="${sg.key}">Not now</button></div>` : '')
       + `<button type="button" class="ghost" data-feel="close">Close</button>`; return; }
   if (!p || Date.now() - p.at > practiceCfg.forgetAfter){ if (p){ practice.pending = null; savePractice(); } box.hidden = true; box.innerHTML = ''; return; }
@@ -2328,10 +2388,8 @@ function logDrive(feel){
   const lead = feel === 'fine' ? '' : feel === 'tense' ? 'A bit tense is what a small step feels like. ' : 'Rough drives still count, and nothing is lost. ';
   const trustNote = p.route && feel === 'fine' ? ' I’ll remember this route and offer it first next time you make this trip.'
     : p.route && p.route.trusted && feel === 'rough' ? ' I won’t offer this route first any more.' : '';
-  renderAsk({title, text: lead + `+${plural(earned, 'pebble')}` + (p.practice ? ' (one extra for practicing)' : '') + '.'
-    + grew.map(sk => ` Your ${sk.name.toLowerCase()} stack grew to ${levelOf(sk.key)} stones.`).join('')
-    + (fresh.length ? ` New keepsake${fresh.length > 1 ? 's' : ''}: ${fresh.map(k => k.name).join(', ')}.` : '') + trustNote,
-    suggest: feel === 'fine' ? null : profileHint()});
+  renderAsk({title, earned, why: p.practice ? 'One for the drive, one for practicing.' : 'One for the drive.', grew, fresh,
+    text: (lead + trustNote).trim(), suggest: feel === 'fine' ? null : profileHint()});
 }
 $('routes').addEventListener('click', e => {
   const f = e.target.closest('[data-forget]'); if (!f) return;

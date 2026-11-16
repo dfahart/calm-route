@@ -15,6 +15,26 @@
 <link rel="stylesheet" href="css/calm-route.css">
 </head>
 <body>
+<!-- The pebble stones: shapes and stone colours, drawn by js stone() wherever pebbles appear -->
+<svg aria-hidden="true" width="0" height="0" class="stonedefs" focusable="false">
+  <defs>
+    <radialGradient id="g-slate" cx="0.36" cy="0.3" r="0.8"><stop offset="0" stop-color="#C9D2D4"></stop><stop offset="0.55" stop-color="#83939A"></stop><stop offset="1" stop-color="#4C595E"></stop></radialGradient>
+    <radialGradient id="g-sand" cx="0.36" cy="0.3" r="0.8"><stop offset="0" stop-color="#F6E3C4"></stop><stop offset="0.55" stop-color="#D5AA78"></stop><stop offset="1" stop-color="#946A40"></stop></radialGradient>
+    <radialGradient id="g-jade" cx="0.36" cy="0.3" r="0.8"><stop offset="0" stop-color="#CFE6DA"></stop><stop offset="0.55" stop-color="#84B39C"></stop><stop offset="1" stop-color="#46735F"></stop></radialGradient>
+    <radialGradient id="g-rose" cx="0.36" cy="0.3" r="0.8"><stop offset="0" stop-color="#F3D9D1"></stop><stop offset="0.55" stop-color="#C9988A"></stop><stop offset="1" stop-color="#8C5B4B"></stop></radialGradient>
+    <radialGradient id="g-basalt" cx="0.36" cy="0.3" r="0.8"><stop offset="0" stop-color="#8D9796"></stop><stop offset="0.55" stop-color="#4A5554"></stop><stop offset="1" stop-color="#232A2A"></stop></radialGradient>
+    <radialGradient id="g-teal" cx="0.36" cy="0.3" r="0.8"><stop offset="0" stop-color="#A4D8D1"></stop><stop offset="0.55" stop-color="#3E918A"></stop><stop offset="1" stop-color="#0A5450"></stop></radialGradient>
+    <radialGradient id="g-apricot" cx="0.36" cy="0.3" r="0.8"><stop offset="0" stop-color="#FBE0C2"></stop><stop offset="0.55" stop-color="#E8A25C"></stop><stop offset="1" stop-color="#A86424"></stop></radialGradient>
+    <radialGradient id="g-gloss" cx="0.34" cy="0.22" r="0.42"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.75"></stop><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"></stop></radialGradient>
+    <radialGradient id="g-glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#E8A25C" stop-opacity="0.55"></stop><stop offset="1" stop-color="#E8A25C" stop-opacity="0"></stop></radialGradient>
+    <radialGradient id="g-shadow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#15201F" stop-opacity="0.28"></stop><stop offset="1" stop-color="#15201F" stop-opacity="0"></stop></radialGradient>
+    <path id="s1" d="M6 22 C4 12 16 4 30 4 C46 4 56 11 55 21 C54 31 43 37 29 37 C15 37 7 31 6 22 Z"></path>
+    <path id="s2" d="M4 20 C5 9 19 5 31 6 C44 7 57 12 56 23 C55 33 40 36 27 35 C13 34 3 29 4 20 Z"></path>
+    <path id="s3" d="M3 18 C5 10 20 7 33 7 C47 7 58 12 57 19 C56 27 44 30 30 30 C15 30 2 26 3 18 Z"></path>
+    <path id="s4" d="M10 20 C9 9 20 3 31 4 C43 5 51 13 50 22 C49 32 40 38 29 37 C18 36 11 30 10 20 Z"></path>
+    <path id="s5" d="M5 21 C6 13 14 8 26 7 C40 6 55 9 56 18 C57 28 46 34 31 35 C17 36 4 30 5 21 Z"></path>
+  </defs>
+</svg>
 <div class="app" id="app">
   <section class="panel" role="main" aria-label="Plan a calm route">
     <div class="scroll">
@@ -40,11 +60,12 @@
 
       <details class="pebbles" id="pebbleCard">
         <summary>
-          <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><ellipse cx="15" cy="22" rx="12" ry="5" fill="#5E717B"/><ellipse cx="16" cy="14" rx="8.5" ry="4.2" fill="#7FA88C"/><ellipse cx="14.5" cy="7.5" rx="5.5" ry="3.2" fill="#E8A25C"/></svg>
+          <span class="minipile" id="pebbleIcon" aria-hidden="true"></span>
           <span><span class="who" id="pebbleCount"></span><span class="what" id="pebbleSub"></span></span>
           <span class="edit" id="pebbleState"></span>
         </summary>
         <div class="pebble-body">
+          <div class="heap" id="pebbleHeap"></div>
           <label class="switch"><input type="checkbox" id="practiceOn" role="switch"><span>Practice mode</span></label>
           <p class="ptext">Practice picks a route with one small step more of the thing you choose, and keeps everything else calm. Go at your own pace. Nothing is ever lost.</p>
           <div class="prow"><label for="practiceSkill">Practice</label><select id="practiceSkill"></select></div>
