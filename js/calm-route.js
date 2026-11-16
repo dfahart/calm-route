@@ -371,6 +371,9 @@ function calmestOf(routes){
   let pool = clean.length ? clean : routes;
   const forward = pool.filter(r => !backtracks(r));          // never pick a route that turns around for the stop
   if (forward.length) pool = forward;
+  // Adding a stop must not swap the route: the one you had, driven through the stop, stays the pick
+  const kept = state.trip && (state.trip.stops || []).length && pool.find(r => r.kind === 'kept');
+  if (kept) return kept;
   const trusted = pool.filter(trustOf);
   if (trusted.length) return usualOf(trusted);
   // Near-ties go to the quicker route: a few extra minutes must buy a calmer drive you'd actually notice

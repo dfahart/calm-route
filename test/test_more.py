@@ -582,6 +582,10 @@ with sync_playwright() as p:
         const body = routeBody(VARIANTS.find(v => v.kind === 'kept'), {...state.trip, keepVia:kv}, 0, false);
         return [d.every((x, i) => i === 0 || x >= d[i - 1]), kv.some(p => p[0] === +state.trip.stops[0].lat.toFixed(6)), body.locations.length === kv.length + 2, body.locations.slice(1, -1).every(l => l.type === 'through')]; })()""")
     check("the points are in driving order, include the stop, and are passed straight through", order == [True, True, True, True], order)
+    pick = page.evaluate("""(() => { const a = state.routes[0], k = Object.assign(Object.create(Object.getPrototypeOf(a)), a, {kind:'kept', mins:a.mins + 1});
+        const calmer = Object.assign(Object.create(Object.getPrototypeOf(a)), a, {kind:'backroads', merges:0, uLefts:0, otherLefts:0, turns:0, busyMiles:0, hwMiles:0, mins:a.mins + 15});
+        return calmestOf([calmer, k]) === k; })()""")
+    check("with a stop, the route you had stays the calm pick, even if a much slower one now scores calmer", pick is True, pick)
     check("no errors in the Florida fixes", not page.errors, page.errors)
     page.context.close()
     T.STOP_AT[0] = T.STOP_AT[1] = 0
