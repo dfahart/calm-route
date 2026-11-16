@@ -497,6 +497,8 @@ with sync_playwright() as p:
     page.evaluate("noteDriveStarted(navApp); practice.pending.at = Date.now() - 5 * 60000; savePractice(); renderAsk()")
     page.click("#driveAsk [data-feel=rough]")
     check("a rough drive on a trusted route ends the trust", page.evaluate("trustedRoutes.length") == 0 and "won’t offer this route first" in page.text_content("#driveAsk"))
+    page.evaluate("update(false)")
+    check("review 4: and the card stops saying 'Your usual calm way' straight away", "Your usual calm way" not in page.text_content("#routes"))
     check("trusted routes are kept with the rest of the driver's data (in backups)", page.evaluate("localStorage.getItem('calmRouteTrusted')") == "[]")
     # Forget it
     page.evaluate("noteDriveStarted(navApp); practice.pending.at = Date.now() - 5 * 60000; savePractice(); renderAsk()")
@@ -531,6 +533,34 @@ with sync_playwright() as p:
     check("a drive that felt fine never brings a suggestion", not page.is_visible("#driveAsk [data-suggest]"))
     check("no errors with learning from drives", not page.errors, page.errors)
     page.context.close()
+    # From the fresh-eyes review
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    calm = page.evaluate("state.routes.findIndex(r => r !== state.fast)")
+    if calm >= 0: page.evaluate(f"selectRoute({calm})")
+    page.wait_for_function("state.sel.pinPlan && state.sel.pinPlan.done", timeout=30000); page.wait_for_timeout(300)
+    note = page.text_content("#detailNote")
+    check("review 1: when pins are checked and match, there's no 'couldn't be checked' warning beside it", "keep" in note and "couldn’t be checked" not in note, note[:220])
+    T.STOP_AT[0], T.STOP_AT[1] = page.evaluate("(() => { const s = state.sel.shape, c = state.sel.cum; return s[c.findIndex(x => x >= 1.0)]; })()")
+    page.check("#needGas")
+    page.wait_for_function("state.stops.length && state.trip && state.trip.stops.length", timeout=30000)
+    page.evaluate("submitTrip()")       # a search is running
+    page.uncheck("#needGas")
+    check("review 3: turning Need gas off mid-search takes the stop away at once", page.evaluate("state.stops.length") == 0 and page.evaluate("state.trip.stops.length") == 0)
+    page.wait_for_function("!$('app').classList.contains('busy')", timeout=30000)
+    page.evaluate("""(() => { const p = [state.sel.shape[3], state.sel.shape[4]]; state.trip.stops = [{kind:'gas', main:'<img src=x onerror=1>Gas', lat:p[0][0], lon:p[0][1]}];
+        drawPins([[p[0][0], p[0][1]]]); })()""")
+    tip = page.evaluate("(() => { let t = ''; pinLayer.eachLayer(l => { if (l.getTooltip()) t += l.getTooltip().getContent(); }); state.trip.stops = []; return t; })()")
+    check("review 9: a place name in a map tooltip is shown as text, never as markup", "&lt;img" in tip and "<img" not in tip, tip)
+    page.context.close()
+    # Corrupt saved practice data doesn't break drive logging
+    ctx_page = T.new_page(b, profile={}, init_script="localStorage.setItem('calmRoutePractice', JSON.stringify({history:{x:1}, declined:5, pending:{at:Date.now() - 300000, to:'X', name:'via X', mins:5, m:{}, route:{pts:'bad'}}})); localStorage.setItem('calmRouteScenicSeen', '{}');")
+    ok = ctx_page.evaluate("Array.isArray(practice.history) && typeof practice.declined === 'object' && practice.pending === null && Array.isArray(scenicSeen)")
+    check("review 10: corrupt saved practice or scenic data is cleaned up on load", ok is True, ok)
+    ctx_page.evaluate("practice.pending = {at:Date.now() - 300000, to:'X', name:'via X', mins:5, m:{lefts:1}, practice:null, route:null}; savePractice(); renderAsk()")
+    ctx_page.click("#driveAsk [data-feel=fine]")
+    check("and a drive can still be logged after that", ctx_page.evaluate("practice.drives") == 1 and not ctx_page.errors, ctx_page.errors)
+    ctx_page.context.close()
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];

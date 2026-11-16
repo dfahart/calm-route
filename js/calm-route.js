@@ -305,7 +305,8 @@ const saveLiked = () => { try { localStorage.setItem('calmRouteLiked', JSON.stri
 // Stored as points along it (about every quarter mile), only in this browser.
 let trustedRoutes = [];
 try { trustedRoutes = (JSON.parse(localStorage.getItem('calmRouteTrusted')) || []).filter(x => x && Array.isArray(x.pts) && x.pts.length >= 2 && Array.isArray(x.from) && Array.isArray(x.to)); } catch(e){}
-const saveTrusted = () => { try { localStorage.setItem('calmRouteTrusted', JSON.stringify(trustedRoutes)); } catch(e){} };
+const saveTrusted = () => { try { localStorage.setItem('calmRouteTrusted', JSON.stringify(trustedRoutes)); } catch(e){}
+  state.routes.forEach(r => { delete r._trust; delete r._trustFit; }); };   // routes on screen re-check against the new list
 // Several routes can follow a trusted one closely (two ways that share most roads): the closest match is the one you drove
 function usualOf(routes){
   const t = routes.filter(trustOf);
@@ -506,9 +507,13 @@ function fromPelias(f){
 const NET_MSG = 'Couldn’t reach the map service. Check your internet connection and try again.';
 async function timedFetch(url, opts = {}, ms = 15000){
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms);
-  try { return await fetch(url, {...opts, signal: ctl.signal}); }
-  catch(e){ const err = new Error(ctl.signal.aborted ? 'timeout' : (e.message || 'network')); err.network = true; throw err; }
-  finally { clearTimeout(timer); }
+  const fail = e => { const err = new Error(ctl.signal.aborted ? 'timeout' : (e && e.message || 'network')); err.network = true; return err; };
+  let r;
+  try { r = await fetch(url, {...opts, signal: ctl.signal}); }
+  catch(e){ clearTimeout(timer); throw fail(e); }
+  // The time limit covers reading the reply too: on a phone a reply can stall after it starts, and nothing would end it
+  for (const k of ['json', 'text']){ const read = r[k].bind(r); r[k] = () => read().catch(e => { throw fail(e); }).finally(() => clearTimeout(timer)); }
+  return r;
 }
 async function stadiaGet(url, query){
   for (let attempt = 0; attempt < 3; attempt++){
@@ -1422,7 +1427,10 @@ function defaultBudget(){
   const calmest = calmestOf(routes), calmestExtra = calmest.extra;
   const reasonable = Math.max(15, state.fast.mins * 0.6);
   const mustHave = !breaks(calmest).length && routes.some(r => breaks(r).length);   // "never" outranks the clock
-  s.value = Math.min(+s.max, Math.ceil((mustHave || calmestExtra <= reasonable ? calmestExtra : Math.max(10, state.fast.mins * 0.3)) / 5) * 5);
+  // A route that keeps every rule must fit, but not the calmest at any cost: past the reasonable limit, the quickest rule-keeping route
+  const keepsRules = mustHave ? Math.min(...routes.filter(r => !breaks(r).length && !backtracks(r)).map(r => r.extra).concat(calmestExtra)) : 0;
+  const want = calmestExtra <= reasonable ? calmestExtra : mustHave ? keepsRules : Math.max(10, state.fast.mins * 0.3);
+  s.value = Math.min(+s.max, Math.ceil(want / 5) * 5);
 }
 function arrivalText(r){ return (r === state.fast ? '' : (r.extra < 1 ? 'about the same · ' : '+' + fmtDur(Math.max(1, r.extra)) + ' · ')) + 'arrive ' + fmtClock(r.mins); }
 function budgetHintText(budget){
@@ -1911,7 +1919,7 @@ async function planPins(r, trip, owner){
     return gaps.filter(g => g.to - g.from >= PIN_MIN_STRETCH).sort((x, y) => (y.to - y.from) - (x.to - x.from));
   };
   try {
-    let sim = !trip.noTolls && state.fast && state.fast !== r ? state.fast.shape : await simRoute(trip, [], owner, r);
+    let sim = !trip.noTolls && !(trip.spots || []).length && state.fast && state.fast !== r ? state.fast.shape : await simRoute(trip, [], owner, r);
     for (;;){
       const open = openGaps(sim, plan.pins);
       if (!open.length){ plan.matched = true; plan.needed = plan.pins.length; break; }
@@ -1933,7 +1941,7 @@ async function planPins(r, trip, owner){
         if (!openGaps(s2, rest).length){ plan.pins = rest; plan.saved++; plan.needed = rest.length; show(); }
       }
     }
-  } catch(e){ plan.failed = true; }
+  } catch(e){ if (e && e.message === 'abandoned'){ if (r.pinPlan === plan) delete r.pinPlan; return; } plan.failed = true; }   // abandoned (a newer search): work it out again next time, don't keep a failure
   plan.done = true; show();
 }
 let pinTimer = null;
@@ -1967,7 +1975,7 @@ function drawPins(pins){
   const stops = (state.trip && state.trip.stops) || [], isStop = p => stops.find(st => st.lat === p[0] && st.lon === p[1]);
   const only = pins.filter(p => !isStop(p));
   pins.forEach(p => { const st = isStop(p);
-    if (st) L.marker(p, {icon:stopIcon, keyboard:false, zIndexOffset:600}).bindTooltip(`${stopKind(st)} stop: ${st.main}`).addTo(pinLayer);
+    if (st) L.marker(p, {icon:stopIcon, keyboard:false, zIndexOffset:600}).bindTooltip(`${stopKind(st)} stop: ${esc(st.main)}`).addTo(pinLayer);
     else L.marker(p, {icon, keyboard:false, zIndexOffset:500})    // on top, so a pin is never hidden behind a merge or turn marker
       .bindTooltip(`Pinned point ${only.indexOf(p) + 1} of ${only.length}: shows as a stop in Google or Apple Maps`).addTo(pinLayer); });
 }
@@ -2032,10 +2040,10 @@ function setLink(){
     const stops = n ? ` ${app} shows ${n === 1 ? 'it as a stop' : 'them as stops'}; you just drive through.` : '';
     if (info.state === 'checking') notes.push(`Working out the fewest pinned points ${app} needs to follow this route…`);
     else if (info.state === 'matched') notes.push(n ? `${n === 1 ? 'One pinned point keeps' : `${n} pinned points keep`} ${app} on this route.${stops}` : `${app} should take this same route with no pinned points${nStops ? ' beyond your stop' + (nStops > 1 ? 's' : '') : ''}.`);
-    if (info.saved && info.state !== 'checking') notes.push(`Your stop${nStops > 1 ? 's' : ''} also keep${nStops > 1 ? '' : 's'} ${app} on the calm route, so ${info.saved === 1 ? 'one pinned point was' : `${info.saved} pinned points were`} dropped.`);
-    if (nStops) notes.push(`Stops count toward the pinned-point limit.`);
     else if (info.state === 'partial') notes.push(`Even with ${plural(n, 'pinned point')}, ${app} may leave this route in places. Look over its route before you leave.${stops}`);
     else notes.push(`The pinned points couldn’t be checked, so ${n} are spread evenly along the route. Look over ${app}’s route before you leave.${stops}`);
+    if (info.saved && info.state !== 'checking') notes.push(`Your stop${nStops > 1 ? 's' : ''} also keep${nStops > 1 ? '' : 's'} ${app} on the calm route, so ${info.saved === 1 ? 'one pinned point was' : `${info.saved} pinned points were`} dropped.`);
+    if (nStops) notes.push(`Stops count toward the pinned-point limit.`);
     if (navApp === 'google' && n + nStops > 3) notes.push('If Google Maps opens in a phone browser instead of the app, set pinned points to at most 3.');
   }
   if (state.trip.from.here && state.trip.from.acc > LOOSE_FIX) notes.push(`Your location is only known to within about ${fixText(state.trip.from.acc)}, so these distances and times are approximate.`);
@@ -2101,6 +2109,9 @@ try {
     ['pebbles','drives','practiceDrives','levelUps'].forEach(k => { practice[k] = Math.max(0, Math.floor(+practice[k]) || 0); });
     if (!SKILLS.some(sk => sk.key === practice.skill)) practice.skill = 'merge';
     if (practice.levels && typeof practice.levels !== 'object') practice.levels = null;
+    if (!Array.isArray(practice.history)) practice.history = [];
+    if (!practice.declined || typeof practice.declined !== 'object') practice.declined = {};
+    if (practice.pending && (typeof practice.pending !== 'object' || (practice.pending.route && !Array.isArray(practice.pending.route.pts)))) practice.pending = null;
   }
 } catch(e){}
 const savePractice = () => { try { localStorage.setItem('calmRoutePractice', JSON.stringify(practice)); } catch(e){} };
@@ -2115,7 +2126,7 @@ function practicePick(budget){
   const sk = SKILLS.find(x => x.key === practice.skill), L = levelOf(sk.key);
   if (profile[sk.key] === 3) return {note:`Practice is paused: you’ve marked ${sk.long} as “Never”. Change that in your comfort profile to practice them.`};
   if (L >= 5) return {note:`Your ${sk.name.toLowerCase()} stack is full. Every route is in reach now, so this is the calmest one that fits your time.`};
-  const fits = r => !breaks(r).length && sk.metric(r) > sk.dose[L-1] + 1e-6 && sk.metric(r) <= sk.dose[L] + 1e-6;
+  const fits = r => !breaks(r).length && !backtracks(r) && sk.metric(r) > sk.dose[L-1] + 1e-6 && sk.metric(r) <= sk.dose[L] + 1e-6;
   const all = state.routes.filter(fits), inTime = all.filter(r => r.extra <= budget + 0.01);
   if (inTime.length){
     const route = inTime.reduce((a, b) => stressOf(b) < stressOf(a) ? b : a);
@@ -2256,7 +2267,6 @@ $('routes').addEventListener('click', e => {
   const f = e.target.closest('[data-forget]'); if (!f) return;
   e.stopPropagation();
   trustedRoutes = trustedRoutes.filter(t => t.id !== f.dataset.forget); saveTrusted();
-  state.routes.forEach(r => { delete r._trust; });
   state.manual = null; defaultBudget(); update(false); setStatus('Forgotten. That route won’t be offered first any more.');
 }, true);
 $('driveAsk').addEventListener('click', e => {
@@ -2646,7 +2656,10 @@ async function findStops(kind, quiet){
     // being right at a turn, and going past the first 3 miles; drive-thru chains get a small bonus for food and coffee
     const score = n.d * 6 + (onHw ? 2.5 : 0) + (atTurn ? 0.5 : right ? 0 : atLight ? 0.6 : 1.5) + Math.max(0, at - 3) * 0.4 + at * 0.05
                 - (kind !== 'gas' && DRIVE_THRU.test(it.main) ? 0.3 : 0);
-    if (out.some(o => hav([o.lat, o.lon], [it.lat, it.lon]) < 0.04)) continue;   // same place listed twice
+    // The same place listed twice ("Meijer" and "Meijer Gas Station"): keep the better-scored one. Two different
+    // brands on opposite corners are both kept.
+    const twin = out.findIndex(o => hav([o.lat, o.lon], [it.lat, it.lon]) < 0.04 && (squash(o.main).includes(squash(it.main)) || squash(it.main).includes(squash(o.main))));
+    if (twin >= 0){ if (out[twin].score <= score) continue; out.splice(twin, 1); }
     out.push({...it, off:n.d, at, right, atTurn, atLight, onHw, score, brand:isBrand(kind, it.main), extra:Math.max(1, Math.round((onHw ? 1.5 : 0) + n.d * 2 / 25 * 60 + 1))});   // there and back at about 25 mph
   }
   out.sort((a, b) => a.score - b.score);
@@ -2709,7 +2722,7 @@ async function autoStopsOnce(){
   const near = list.filter(st => st.off <= 0.09 && st.brand && (kind !== 'food' || DRIVE_THRU.test(st.main))).slice(0, 3);   // "Need food" promises a drive-thru: no Subway or Panera
   // ...and must really be on the way: a station on the highway route can be behind you on the calm one, so time
   // the real drive with it and without it, and skip any that add more than about 2 minutes (a backtrack always does)
-  let best = null, tooFar = false;
+  let best = null, tooFar = false, unmeasured = 0;
   if (near.length){
     // Drive the chosen route's own way (same road preferences) through each candidate, and compare with the route
     // as it stands. Keep the first that adds at most ~2 minutes and never doubles back.
@@ -2719,7 +2732,7 @@ async function autoStopsOnce(){
     for (const c of near){
       const d = await drive(c).catch(() => null);
       if (run !== state.runId || state.sel !== r || !$(AUTO[kind]).checked || hasKind(kind)) return;
-      if (!d){ best = c; break; }                                // can't measure: trust the on-the-road check
+      if (!d){ unmeasured++; continue; }                         // couldn't measure: try the next, never accept one blind
       const i = nearestOnShape(d.shape, [c.lat, c.lon]).i;       // a 'through' stop doesn't split the drive, so split it here
       if (d.mins - r.mins <= 2 && !doublesBack(d.shape.slice(0, i + 1), d.shape.slice(i))){ best = c; break; }
       tooFar = true;
@@ -2729,6 +2742,7 @@ async function autoStopsOnce(){
   if (!best){
     setStatus((list.failed || 0) > (list.searched || 1) / 2
       ? `The place search isn’t answering right now, so no ${noun} could be looked up. Try again in a minute.`
+      : unmeasured && !tooFar ? `Couldn’t check that a ${noun} is on the way right now, so it’s planned without a stop. Try again in a minute, or press ${kind === 'gas' ? 'Gas' : 'Food'} to pick one yourself.`
       : tooFar ? `Every ${noun} near this route would mean doubling back, so it’s planned without a stop. Press ${kind === 'gas' ? 'Gas' : 'Food'} to see them anyway.`
       : `No ${noun} right on this route, so it’s planned without a stop. Press ${kind === 'gas' ? 'Gas' : 'Food'} to see ones a little off it.`);
     if (resubmit) submitTrip();
@@ -2763,6 +2777,8 @@ $('stopBox').addEventListener('click', e => {
 // (replacing any other stop); turning it off takes its stop away.
 Object.entries(AUTO).forEach(([kind, id]) => $(id).addEventListener('change', () => {
   if ($(id).checked) Object.entries(AUTO).forEach(([k, other]) => { if (k !== kind) $(other).checked = false; });
+  // Off always takes the stop away at once, even mid-search: the switch must never show off while routes still go through it
+  if (!$(id).checked && hasKind(kind)){ setStops([]); $('stopList').innerHTML = ''; renderStop(); setStatus(`Finding routes without the ${kind} stop…`); submitTrip(); return; }
   if (!state.routes.length || $('app').classList.contains('busy')) return;           // the next search picks it up
   if ($(id).checked){
     if (state.stops.length && !hasKind(kind)){ setStops([]); renderStop(); $('stopList').innerHTML = ''; stopsCleared = true; }
@@ -2836,7 +2852,7 @@ const SCENIC_BAD = /\b(dog|skate|playscape|playground|welcome to|cemetery|golf|b
 let scenicPrefs = {mins:30, kind:'loop'};
 try { scenicPrefs = {...scenicPrefs, ...(JSON.parse(localStorage.getItem('calmRouteScenic')) || {})}; } catch(e){}
 let scenicSeen = [];
-try { scenicSeen = JSON.parse(localStorage.getItem('calmRouteScenicSeen')) || []; } catch(e){}
+try { const v = JSON.parse(localStorage.getItem('calmRouteScenicSeen')); scenicSeen = Array.isArray(v) ? v : []; } catch(e){}
 // A point d miles from p in the direction of bearing (degrees)
 function offsetPoint(p, d, bearing){
   const b = bearing * Math.PI / 180;
