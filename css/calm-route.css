@@ -267,7 +267,8 @@ input[type=range]{width:100%;accent-color:var(--lake);height:28px;margin:0}
 .feel button{flex:1;min-width:92px;padding:10px 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--paper);cursor:pointer;font-size:15px}
 .feel button:hover{border-color:var(--lake);background:var(--lake-soft)}
 .driveask .ghost{margin-top:8px;font-weight:400;padding:8px 0}
-.fuelbox{margin:16px 2px 0;font-size:14px;color:var(--sub)}
+.fuelbox{font-size:14px;color:var(--sub)}
+.psection.fuelbox > summary{font-size:16px}
 .fuelbox summary{cursor:pointer;color:var(--ink);font-weight:700}
 .fuelgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .fuelgrid label{display:flex;flex-direction:column;gap:4px;font-size:13px}
