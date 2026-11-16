@@ -2079,7 +2079,7 @@ function setLink(){
   $('gmaps').href = url; $('copybox').value = url;
   $('gmaps').textContent = !followsRoute ? 'Go to destination in Waze' : (state.sel === state.fast ? 'Open fastest route in ' : 'Open this route in ') + APPS[navApp];
   $('alsoOpen').innerHTML = 'Or open in' + Object.keys(APPS).filter(k => k !== navApp)
-    .map((k, i, arr) => `${i ? (i === arr.length - 1 ? ' or' : ',') : ''}<a href="${esc(links[k])}" target="_blank" rel="noopener" data-app="${k}">${APPS[k]}</a>`).join('');
+    .map((k, i, arr) => `${i ? (i === arr.length - 1 ? ' or' : ',') : ''} <a href="${esc(links[k])}" target="_blank" rel="noopener" data-app="${k}">${APPS[k]}</a>`).join('');
   $('pinsWrap').style.display = followsRoute ? '' : 'none';
   const wazeNote = state.sel !== state.fast
     ? 'Waze links can only carry a destination, so Waze will pick its own route, not this calm one. To stay closer to it, turn on Avoid highways in Waze’s navigation settings.'

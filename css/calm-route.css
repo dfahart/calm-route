@@ -293,7 +293,7 @@ input[type=range]{width:100%;accent-color:var(--lake);height:28px;margin:0}
 .actionrow select{border:1px solid var(--line);border-radius:6px;background:var(--paper);padding:4px 6px}
 .actionrow .ghost{margin-left:auto}
 .alsoopen{margin:8px 2px 0;font-size:14px;color:var(--sub)}
-.alsoopen a{font-weight:700;text-decoration:none;margin-left:4px;display:inline-block;padding:5px 0}
+.alsoopen a{font-weight:700;text-decoration:none;display:inline-block;padding:5px 0}
 .alsoopen a:hover{text-decoration:underline}
 .appnote{margin:6px 2px 0;font-size:13px;color:#7A5418;display:none}
 .appnote.show{display:block}
