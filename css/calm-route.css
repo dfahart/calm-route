@@ -57,7 +57,7 @@ a{color:var(--lake)}
 .viewtoggle button{font:700 14px var(--font);border:0;background:transparent;color:#34454D;padding:6px 14px;border-radius:8px;cursor:pointer}
 .viewtoggle button[aria-pressed=true]{background:var(--paper);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 /* Simple view: only the recommended route and what the driver needs to know */
-#app.simple .route[aria-checked=false], #app.simple .budget, #app.simple .strip, #app.simple .route .why, #app.simple .route .fuel,
+#app.simple .budget, #app.simple .strip, #app.simple .route .why,
 #app.simple #momentBox, #app.simple #briefBox, #app.simple .key{display:none}
 .tag.simple{background:#EAF0F5;color:#2E5A75}
 .tag.trusted{background:#EEF4EA;color:#3E5F35}
@@ -379,3 +379,17 @@ legend{font-weight:700;margin-bottom:8px;padding:0}
 .choices.multi button{flex:0 0 auto}
 #brandAsk:empty{display:none}
 #brandAsk{margin-top:8px}
+
+/* Profile: the questions up front; everything optional is one tap away */
+.psection{border:1px solid var(--line);border-radius:12px;padding:0 14px;margin:10px 0;background:var(--paper)}
+.psection > summary{cursor:pointer;font-weight:700;padding:13px 0;min-height:44px;box-sizing:border-box;display:flex;align-items:center;gap:8px}
+.psection[open] > summary{border-bottom:1px solid var(--line);margin-bottom:10px}
+.psection > summary .opt, .psection > summary .count{font-weight:400;color:var(--sub);font-size:14px}
+.psection fieldset{border:0;padding:0;margin:0 0 10px}
+.psection .addpick{margin:4px 0 0}
+/* Tap-the-map mode */
+.pickbar{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:1200;background:var(--ink);color:#fff;border-radius:12px;padding:8px 10px 8px 16px;
+  box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px;max-width:calc(100vw - 24px);font-size:15px}
+.pickbar[hidden]{display:none}
+.pickbar .ghost{color:#fff;border-color:rgba(255,255,255,.5)}
+#map.picking{cursor:crosshair}

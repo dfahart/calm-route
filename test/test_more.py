@@ -158,8 +158,10 @@ with sync_playwright() as p:
     tl = list(T.calls["tiles"])
     check("without a key (demo), OpenStreetMap's tiles are used and credited", tl and all("tile.openstreetmap.org" in u for u in tl) and "OpenStreetMap contributors" in page.text_content(".leaflet-control-attribution"), tl[:2])
     page.click("#editProfile")
-    body = page.text_content("#quizBody")
-    check("the worry question is marked optional and says the answer stays on the device", "(optional)" in body and "stays on this device and is never sent anywhere" in body and "prefer not to say" in body)
+    body = page.text_content("#moreBox")
+    check("the worry question sits under 'More settings (optional)', says it stays on the device, and offers 'prefer not to say'",
+          "More settings" in body and "optional" in body and "stays on this device" in body and "prefer not to say" in body)
+    check("and no health labels: 'Feeling overwhelmed', not 'panic attack'", "Feeling overwhelmed" in body and "panic" not in body.lower())
     page.context.close()
     # The time slider is live
     page = T.new_page(b, profile={"merge":2, "boxed":2, "turns":0}, query=f"?stadiaKey={T.STADIA_KEY}")
@@ -191,16 +193,21 @@ with sync_playwright() as p:
     page = T.new_page(b, profile={"merge":2, "boxed":2, "view":"simple"}, query=f"?stadiaKey={T.STADIA_KEY}")
     trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
     vis = lambda sel: page.locator(sel).first.is_visible() if page.locator(sel).count() else False
-    check("simple view shows only the recommended route", page.locator("#routes .route:visible").count() == 1 and page.evaluate("document.querySelector('#routes .route[aria-checked=true]').offsetParent !== null"))
+    nfast = 1 if page.evaluate("state.sel !== state.fast") else 0
+    cards = page.locator("#routes .route:visible")
+    check("simple view shows the calm pick and the fastest, calm pick first", cards.count() == 1 + nfast and cards.first.get_attribute("aria-checked") == "true"
+          and (not nfast or "isfast" in cards.nth(1).get_attribute("class")), [cards.count(), nfast])
+    check("each shows its gas cost (a typical car until you add yours)", all("in gas" in cards.nth(i).text_content() and "typical car" in cards.nth(i).text_content() for i in range(cards.count())),
+          [cards.nth(i).text_content()[-120:] for i in range(cards.count())])
     check("and hides the slider, strip, tricky-moments list and briefing", not vis(".budget") and not vis("#routes .strip") and not vis("#momentBox") and not vis("#briefBox"))
     check("it still shows the time, the summary line and the hand-off button", vis("#routes .route[aria-checked=true] .route-time") and vis("#routes .route[aria-checked=true] .moments") and vis("#gmaps"))
-    check("only the recommended route is drawn on the map", page.evaluate("(() => { let n = 0; layer.eachLayer(l => { if (l instanceof L.Polyline && l.options.weight === 4) n++; }); return n; })()") == 0)
+    check("the map shows the calm pick and the fastest (dashed), not every route", page.evaluate("(() => { let n = 0; layer.eachLayer(l => { if (l instanceof L.Polyline && l.options.weight === 4) n++; }); return n; })()") == nfast)
     page.click(".viewtoggle [data-view=full]")
     check("switching to Details brings everything back and remembers it", page.locator("#routes .route:visible").count() > 1 and vis(".budget") and page.evaluate("JSON.parse(localStorage.getItem('calmRouteProfile')).view") == "full")
     page.click(".viewtoggle [data-view=simple]")
-    check("and back to Simple", page.locator("#routes .route:visible").count() == 1)
+    check("and back to Simple", page.locator("#routes .route:visible").count() == 1 + nfast)
     page.click("#editProfile")
-    check("the profile asks how much detail, with 'Just the calm pick (I trust Calm Route)'", "How much detail do you want?" in page.text_content("#quizBody") and "I trust Calm Route" in page.text_content("#quizBody"))
+    check("the profile asks how much detail, with 'Just the calm pick (I trust Calm Route)'", "How much detail do you want?" in page.text_content("#moreBox") and "I trust Calm Route" in page.text_content("#moreBox"))
     check("no errors in simple view", not page.errors, page.errors)
     page.context.close()
     # Accessibility: axe finds nothing on any screen; keyboard works end to end; focus is visible
@@ -594,9 +601,9 @@ with sync_playwright() as p:
     page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
     words = page.evaluate("[STOP_WORDS.gas.length, STOP_WORDS.gas.includes('Gas'), stopWords('gas').some(w => /costco|sam|bj/i.test(w))]")
     check("gas comes from about 20 named chains, never a plain 'gas' search, and no members-only clubs by default", words == [20, False, False], words)
-    page.click("#editProfile"); page.wait_for_selector("#quizBody [data-m]")
-    check("the profile has 'Gas stations you like' and 'Drive-thrus you like'", "Gas stations you like" in page.text_content("#quizBody") and "Drive-thrus you like" in page.text_content("#quizBody"))
-    page.click("#quizBody [data-m=\"Costco Gas\"]"); page.click("#quizBody [data-m=\"Shell\"]"); page.click("#saveProfile")
+    page.click("#editProfile"); page.wait_for_selector("#quizLikes [data-m]")
+    check("the profile has 'Gas stations and drive-thrus you like'", "Gas stations and drive-thrus you like" in page.text_content("#quizLikes") and "Drive-thrus" in page.text_content("#quizLikes"))
+    page.click("#quizLikes [data-m=\"Costco Gas\"]"); page.click("#quizLikes [data-m=\"Shell\"]"); page.click("#saveProfile")
     check("choosing Costco and Shell saves them", page.evaluate("JSON.parse(localStorage.getItem('calmRouteProfile')).likedBrands") == ["Costco Gas", "Shell"])
     fits = page.evaluate("[stopWords('gas').includes('Costco Gas'), nameFits('Costco Gas', 'Costco Gasoline'), nameFits('Costco Gas', 'Costco Wholesale'), nameFits('Costco Gas', 'Costco Gas Station'), isBrand('gas', 'Costco Wholesale')]")
     check("a chosen club is searched, and only its gas station counts (not the warehouse store)", fits == [True, True, False, True, False], fits)
@@ -619,6 +626,30 @@ with sync_playwright() as p:
     check("no errors with chains and places you like", not page.errors, page.errors)
     page.context.close()
     T.STOP_AT[0] = T.STOP_AT[1] = 0; T.LEFT_AT[0] = T.LEFT_AT[1] = 0
+    # A tidy profile: questions up front, the optional parts one tap away; adding spots and roads by tapping the map
+    page = T.new_page(b, profile={"merge":1}, query=f"?stadiaKey={T.STADIA_KEY}", open_sections=False, mobile=True, width=390, height=844)
+    page.click("#editProfile"); page.wait_for_selector("#quizBody button")
+    closed = page.evaluate("[...document.querySelectorAll('#sheet details.psection')].map(d => [d.querySelector('summary').textContent.trim().split(/\\s{2,}|optional|\\(/)[0].trim(), d.open])")
+    check("the profile shows the questions, with every optional part folded away behind a tap", closed and all(not o for _, o in closed) and len(closed) >= 5, closed)
+    check("including your car, places you like, more settings, avoided spots, liked roads and your data",
+          all(any(k in n for n, _ in closed) for k in ("Your car", "Gas stations", "More settings", "Spots you avoid", "Roads you like", "Your data")), [n for n, _ in closed])
+    check("nothing in the profile mentions right-clicking", "right-click" not in page.text_content("#sheet").lower())
+    page.click("#spotBox summary"); page.click("#spotBox [data-pick=avoid]")
+    check("'Add a spot on the map' closes the profile and asks for a tap on the map", not page.evaluate("$('sheet').classList.contains('open')") and page.is_visible("#pickBar") and "Tap the spot" in page.text_content("#pickBar"))
+    page.evaluate("map.fire('click', {latlng:L.latLng(42.25, -85.6)})")
+    check("tapping the map adds the spot and ends tap mode", page.evaluate("avoidSpots.length") == 1 and not page.is_visible("#pickBar"))
+    page.click("#editProfile"); page.click("#likedBox summary"); page.click("#likedBox [data-pick=like]"); page.click("#pickCancel")
+    page.evaluate("map.fire('click', {latlng:L.latLng(42.26, -85.61)})")
+    check("Cancel ends tap mode without adding anything", page.evaluate("likedRoads.length") == 0 and not page.is_visible("#pickBar"))
+    check("the avoided-spots heading shows how many there are", "(1)" in page.text_content("#spotBox summary"))
+    check("no errors in the tidy profile", not page.errors, page.errors)
+    page.context.close()
+    # First run: only the questions and optional extras, not empty lists or data controls
+    page = T.new_page(b, open_sections=False)
+    page.wait_for_selector("#quizBody button")
+    check("a brand-new driver doesn't see avoided spots, liked roads or data controls yet", not page.is_visible("#spotBox") and not page.is_visible("#likedBox") and not page.is_visible("#dataBox"))
+    check("your car is in the profile, not on the results", page.locator("#sheet #fuelBox").count() == 1)
+    page.context.close()
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];

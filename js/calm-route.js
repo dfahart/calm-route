@@ -142,7 +142,7 @@ const QUESTIONS = [
 // 'Never' is a rule, not a weight: routes that break it are only offered when nothing else exists
 const LEVELS = [{label:'No problem', m:0.3},{label:'A bit', m:1},{label:'Avoid it', m:2.5},{label:'Never', m:4}];
 const WORRIES = [
-  {key:'panic',  label:'Having a panic attack'},
+  {key:'panic',  label:'Feeling overwhelmed'},
   {key:'crash',  label:'Having a crash'},
   {key:'judged', label:'Other drivers judging me'},
   {key:'none',   label:'Not sure, or prefer not to say'},
@@ -1479,7 +1479,9 @@ function update(fit, keepMap){
   $('budgetOut').textContent = budget === 0 ? 'None' : '+' + fmtDur(budget);
   $('budgetHint').textContent = budgetHintText(budget);
   const calmest = calmestOf(state.routes), usual = usualOf(state.routes);
-  const sorted = [...state.routes].sort((a, b) => a.mins - b.mins);
+  const simple = profile.view === 'simple';
+  // Simple view compares just two: the calm pick first, then the fastest. Details lists every route, quickest first.
+  const sorted = simple ? [state.sel, ...(state.fast !== state.sel ? [state.fast] : [])] : [...state.routes].sort((a, b) => a.mins - b.mins);
   const dark = darkInfo();
   const focused = $('routes').contains(document.activeElement) ? document.activeElement.dataset.i : null;
   $('routes').innerHTML = sorted.map(r => {
@@ -1497,7 +1499,7 @@ function update(fit, keepMap){
     const W = r.total;
     const segs = r.segs.map(s => `<span class="seg ${s.kind}" style="width:${Math.max(0, (s.to - s.from) / W * 100).toFixed(2)}%"></span>`).join('');
     const ev = r.events.filter(e => e.kind !== 'exit').map(e => `<span class="ev ${e.kind}" style="left:${Math.min(98, Math.max(2, e.at / W * 100)).toFixed(1)}%" title="${esc(e.text)}">${evLetter(e.kind)}</span>`).join('');
-    return `<li class="route${over ? ' over' : ''}${r.pending ? ' pending' : ''}" role="radio" tabindex="${sel ? 0 : -1}" aria-checked="${sel}" data-i="${i}">
+    return `<li class="route${over ? ' over' : ''}${r.pending ? ' pending' : ''}${r === state.fast ? ' isfast' : ''}" role="radio" tabindex="${sel ? 0 : -1}" aria-checked="${sel}" data-i="${i}">
       <div class="route-head">
         <div class="route-name">${esc(r.name)}</div>
         <div class="route-time"><b>${fmtDur(r.mins)}</b><span>${arrivalText(r)}</span></div>
@@ -1532,8 +1534,13 @@ let fuel = {on:false, city:'', hw:'', price:'', car:null, priceAuto:true, prices
 try { const f = JSON.parse(localStorage.getItem('calmRouteFuel')); if (f && typeof f === 'object') fuel = {...fuel, ...f}; } catch(e){}
 if (fuel.car && typeof fuel.car !== 'object') fuel.car = null;
 if (fuel.prices && typeof fuel.prices !== 'object') fuel.prices = null;
+if (!fuel.v){ fuel.on = true; fuel.v = 2; }        // costs are shown by default now, for a typical car until you add yours
 const saveFuel = () => { try { localStorage.setItem('calmRouteFuel', JSON.stringify(fuel)); } catch(e){} };
-const fuelReady = () => fuel.on && +fuel.city >= 5 && +fuel.hw >= 5 && +fuel.price > 0;
+const TYPICAL_CAR = {city:25, hw:32};
+const mpgCity = () => +fuel.city >= 5 ? +fuel.city : TYPICAL_CAR.city, mpgHw = () => +fuel.hw >= 5 ? +fuel.hw : TYPICAL_CAR.hw;
+const typicalCar = () => !(+fuel.city >= 5 && +fuel.hw >= 5);
+const fuelPrice = () => +fuel.price > 0 ? +fuel.price : avgPrice();
+const fuelReady = () => fuel.on && fuelPrice() > 0;
 // Fuel is priced stretch by stretch from each road's typical speed. EPA's city test averages 21.2 mph with
 // stops; its highway test averages 48.3 mph with none. At or below 21.2 mph a mile uses the city figure, at
 // 48.3 mph and up the highway figure, and in between the fuel per mile is blended by speed (gallons, never mpg,
@@ -1546,7 +1553,7 @@ function gallonsPerMile(mph, city, hw){
   if (mph < EPA_HW_MPH) return cCity + (cHw - cCity) * (mph - EPA_CITY_MPH) / (EPA_HW_MPH - EPA_CITY_MPH);
   return mph <= FAST_FROM ? cHw : cHw / Math.pow(1 - FAST_LOSS, (mph - FAST_FROM) / 5);
 }
-function fuelGallons(r, city = +fuel.city, hw = +fuel.hw){
+function fuelGallons(r, city = mpgCity(), hw = mpgHw()){
   const entries = Object.entries(r.speedMiles || {});
   if (!entries.length) return null;                                // no road details yet
   const known = entries.filter(([mph]) => +mph > 0);
@@ -1555,14 +1562,14 @@ function fuelGallons(r, city = +fuel.city, hw = +fuel.hw){
   const sum = all.reduce((a, [, mi]) => a + mi, 0), scale = sum > 0 ? r.miles / sum : 1;   // match the route's own length
   return all.reduce((g, [mph, mi]) => g + mi * scale * gallonsPerMile(+mph, city, hw), 0);
 }
-const fuelCost = r => { const g = fuelGallons(r); return g == null ? null : g * +fuel.price; };
+const fuelCost = r => { const g = fuelGallons(r); return g == null ? null : g * fuelPrice(); };
 // To the nearest 5¢: the estimate isn't more precise than that
 const money = x => { const c = Math.max(5, Math.round(x * 20) * 5); return c < 100 ? `${c}¢` : `$${(c / 100).toFixed(2)}`; };
 function fuelText(r){
   if (!fuelReady()) return '';
   const c = fuelCost(r);
   if (c == null) return '';                       // shown once this route's road details are in
-  const base = `About ${money(c)} in gas${r.toll ? ', plus tolls' : ''}`;
+  const base = `About ${money(c)} in gas${typicalCar() ? ' for a typical car' : ''}${r.toll ? ', plus tolls' : ''}`;
   const f = state.fast, fc = f && f !== r ? fuelCost(f) : null;
   if (fc == null) return base;
   const d = c - fc, tollNote = f.toll && !r.toll ? '; the fastest also has tolls' : '';
@@ -1657,10 +1664,10 @@ function priceNote(){
 }
 function fuelSwitch(){
   $('fuelFields').disabled = !fuel.on;
-  if (fuel.on){ if (!carLoaded){ carLoaded = true; loadCarMenus('init'); } refreshPrice(); }
+  if (fuel.on){ if (!carLoaded && $('fuelBox').open){ carLoaded = true; loadCarMenus('init'); } refreshPrice(); }   // the car list loads only when you open "Your car"
 }
 $('fuelOn').checked = !!fuel.on; $('mpgCity').value = fuel.city; $('mpgHw').value = fuel.hw; $('gasPrice').value = fuel.price;
-if (fuel.on) $('fuelBox').open = true;
+if (fuel.on){ refreshPrice(); }
 $('fuelOn').addEventListener('change', () => { fuel.on = $('fuelOn').checked; saveFuel(); fuelSwitch(); if (state.routes.length) update(false); });
 ['mpgCity', 'mpgHw'].forEach(id => $(id).addEventListener('input', () => { fuel.city = $('mpgCity').value; fuel.hw = $('mpgHw').value; saveFuel(); carNote(); if (state.routes.length) update(false); }));
 $('gasPrice').addEventListener('input', () => { fuel.price = $('gasPrice').value; fuel.priceAuto = false; saveFuel(); priceNote(); if (state.routes.length) update(false); });
@@ -1668,6 +1675,7 @@ $('priceNote').addEventListener('click', e => { if (!e.target.closest('#useAvg')
 $('carYear').addEventListener('change', () => loadCarMenus('year'));
 $('carMake').addEventListener('change', () => loadCarMenus('make'));
 $('carModel').addEventListener('change', () => loadCarMenus('model'));
+$('fuelBox').addEventListener('toggle', () => { if ($('fuelBox').open) fuelSwitch(); });
 $('carTrim').addEventListener('change', pickCar);
 window.addEventListener('focus', () => refreshPrice());
 fuelSwitch();
@@ -1827,7 +1835,7 @@ function draw(fit){
   layer.clearLayers();
   const simple = profile.view === 'simple';   // simple view: only the recommended route on the map
   if (!simple) state.routes.forEach(r => { if (r !== state.sel && r !== state.fast) L.polyline(r.shape, {color:'#9AAAB1', weight:4, opacity:.7}).addTo(layer); });
-  if (!simple && state.fast !== state.sel) L.polyline(state.fast.shape, {color:'#5E717B', weight:4, opacity:.9, dashArray:'7 8'}).addTo(layer);
+  if (state.fast !== state.sel) L.polyline(state.fast.shape, {color:'#5E717B', weight:4, opacity:.9, dashArray:'7 8'}).addTo(layer);   // the fastest, dashed, for comparison
   L.polyline(state.sel.shape, {color:'#fff', weight:10, opacity:1, interactive:false}).addTo(layer);
   L.polyline(state.sel.shape, {color:'#2E6A8A', weight:6, opacity:1, interactive:false}).addTo(layer);
   // Click or tap a grey line on the map to pick that route (a wide invisible line makes it easy to hit)
@@ -2342,14 +2350,19 @@ function openQuiz(){
     opts.map(o => `<button type="button" data-m="${esc(o.v)}" aria-pressed="${draft.likedBrands.includes(o.v)}">${esc(o.label)}</button>`).join('') + '</div></fieldset>';
   const group = (key, legend, opts, isLevel) => `<fieldset><legend>${legend}</legend><div class="choices" data-k="${key}">` +
     opts.map((o, i) => { const v = isLevel ? i : o.key; return `<button type="button" data-v="${v}" aria-pressed="${draft[key] === v}">${esc(o.label)}</button>`; }).join('') + '</div></fieldset>';
-  $('quizBody').innerHTML = QUESTIONS.map(q => group(q.key, esc(q.text), q.hard ? LEVELS : LEVELS.slice(0, 3), true)).join('') + group('worry', 'When you drive, what worries you most? (optional)', WORRIES, false)
-    + '<p class="lede" style="margin:-4px 0 12px">This only fine-tunes how routes are scored. Your answer stays on this device and is never sent anywhere.</p>'
-    + group('view', 'How much detail do you want?', VIEWS, false)
-    + '<p class="lede" style="margin:-4px 0 12px">“Just the calm pick” shows the route Calm Route recommends and only what you need to know. You can switch any time on the results.</p>'
-    + multi('Gas stations you like (optional)', [...GAS_CHAINS.map(w => ({v:w, label:chainLabel(w)})), ...CLUB_GAS.map(c => ({v:c.word, label:c.label}))])
-    + '<p class="lede" style="margin:-4px 0 12px">When one of these is an easy stop on your way, Need gas picks it. Warehouse clubs are only used if you choose them here, since you need a membership.</p>'
-    + multi('Drive-thrus you like (optional)', STOP_WORDS.food.filter(w => DRIVE_THRU.test(w)).map(w => ({v:w, label:w})));
-  $('quizBody').onclick = e => {
+  $('quizBody').innerHTML = QUESTIONS.map(q => group(q.key, esc(q.text), q.hard ? LEVELS : LEVELS.slice(0, 3), true)).join('');
+  const nLiked = draft.likedBrands.length;
+  $('quizLikes').innerHTML = `<details class="psection"><summary>Gas stations and drive-thrus you like <span class="opt">${nLiked ? nLiked + ' chosen' : 'optional'}</span></summary>`
+    + multi('Gas stations', [...GAS_CHAINS.map(w => ({v:w, label:chainLabel(w)})), ...CLUB_GAS.map(c => ({v:c.word, label:c.label}))])
+    + '<p class="lede" style="margin:-4px 0 12px">When one of these is an easy stop on your way, Need gas picks it. Warehouse clubs are only used if you choose them, since you need a membership.</p>'
+    + multi('Drive-thrus', STOP_WORDS.food.filter(w => DRIVE_THRU.test(w)).map(w => ({v:w, label:w}))) + '</details>';
+  $('quizMore').innerHTML = group('view', 'How much detail do you want?', VIEWS, false)
+    + '<p class="lede" style="margin:-4px 0 12px">“Just the calm pick” shows the route Calm Route recommends next to the fastest one. You can switch any time on the results.</p>'
+    + group('worry', 'When you drive, what worries you most?', WORRIES, false)
+    + '<p class="lede" style="margin:-4px 0 12px">This only fine-tunes how routes are scored and the encouragement you see. It stays on this device.</p>';
+  // First time through: just the questions and the optional extras; lists and data come once there's a profile
+  ['spotBox', 'likedBox', 'dataBox'].forEach(id => { $(id).hidden = !hasProfile; });
+  $('quizLikes').onclick = $('quizMore').onclick = $('quizBody').onclick = e => {
     const mb = e.target.closest('button[data-m]');
     if (mb){ const v = mb.dataset.m, on = !draft.likedBrands.includes(v);
       draft.likedBrands = on ? [...draft.likedBrands, v] : draft.likedBrands.filter(x => x !== v); mb.setAttribute('aria-pressed', on); return; }
@@ -2407,7 +2420,9 @@ function renderSpotList(){
   $('spotList').innerHTML = (avoidSpots.length
     ? '<ul class="spotlist">' + avoidSpots.map(sp => `<li><span>${esc(sp.label)}</span><button type="button" data-unspot="${esc(sp.id)}">Remove</button></li>`).join('') + '</ul>'
     : '<p class="lede" style="margin:4px 0 0">None yet.</p>')
-    + '<p class="lede" style="margin:8px 0 0">To add one, right-click the map (or press and hold on a phone) and choose “Avoid this spot”, or choose “Avoid” next to a tricky moment.</p>';
+    + '<button type="button" class="ghost addpick" data-pick="avoid">Add a spot on the map</button>'
+    + '<p class="lede" style="margin:8px 0 0">Tap the button, then tap the spot on the map. You can also choose “Avoid” next to a tricky moment on a route.</p>';
+  $('spotCount').textContent = avoidSpots.length ? `(${avoidSpots.length})` : '';
 }
 // Routes on screen are found again with the new set of spots
 function refreshForSpots(msg){
@@ -2443,6 +2458,21 @@ async function nameSpot(sp){
     if (name && avoidSpots.includes(sp)){ sp.label = `Near ${name}`; saveSpots(); drawSpots(); renderSpotList(); }
   } catch(e){}
 }
+// Adding by tapping: "Add a spot" closes the profile and the next tap on the map adds it. Works the same on a phone
+// and a computer; right-click (or press and hold) stays as a shortcut.
+let pickMode = null;
+function startPick(kind){
+  pickMode = kind; closeQuiz();
+  $('pickText').textContent = kind === 'avoid' ? 'Tap the spot on the map you want routes to avoid.' : 'Tap a road you enjoy driving on the map.';
+  $('pickBar').hidden = false; $('map').classList.add('picking'); $('pickCancel').focus();
+}
+function endPick(){ pickMode = null; $('pickBar').hidden = true; $('map').classList.remove('picking'); }
+$('pickCancel').onclick = endPick;
+map.on('click', e => {
+  if (!pickMode) return;
+  const kind = pickMode, p = [e.latlng.lat, e.latlng.lng]; endPick();
+  if (kind === 'avoid') addSpot(p); else addLiked(p);
+});
 map.on('contextmenu', e => {
   L.popup({className:'', closeButton:true}).setLatLng(e.latlng)
     .setContent('<div class="spotpop"><p>What about this spot?</p><button type="button" class="go" data-addspot="1">Avoid this spot</button> <button type="button" data-addlike="1">I like this road</button></div>').openOn(map);
@@ -2454,7 +2484,8 @@ map.on('popupopen', e => {
   const lk = el.querySelector('[data-addlike]'); if (lk){ const ll = e.popup.getLatLng(); lk.onclick = () => addLiked([ll.lat, ll.lng]); }
   const ul = el.querySelector('[data-unlike]'); if (ul) ul.onclick = () => removeLiked(ul.dataset.unlike);
 });
-$('spotList').addEventListener('click', e => { const b = e.target.closest('[data-unspot]'); if (b) removeSpot(b.dataset.unspot); });
+$('spotList').addEventListener('click', e => { const b = e.target.closest('[data-unspot]'); if (b) removeSpot(b.dataset.unspot); const pk = e.target.closest('[data-pick]'); if (pk) startPick('avoid'); });
+$('likedBox').addEventListener('click', e => { const pk = e.target.closest('[data-pick]'); if (pk) startPick('like'); });
 drawSpots(); renderSpotList();
 
 // ================= roads you like =================
@@ -2471,7 +2502,9 @@ function renderLikedList(){
   $('likedList').innerHTML = (likedRoads.length
     ? '<ul class="spotlist">' + likedRoads.map(lr => `<li><span>${esc(lr.name || 'Unnamed road')}</span><button type="button" data-unlike="${esc(lr.id)}">Remove</button></li>`).join('') + '</ul>'
     : '<p class="lede" style="margin:4px 0 0">None yet.</p>')
-    + '<p class="lede" style="margin:8px 0 0">To add one, right-click the map on a road you enjoy (or press and hold on a phone) and choose “I like this road”. Calm routes will lean toward it, without big detours.</p>';
+    + '<button type="button" class="ghost addpick" data-pick="like">Add a road on the map</button>'
+    + '<p class="lede" style="margin:8px 0 0">Tap the button, then tap a road you enjoy on the map. Calm routes will lean toward it, without big detours.</p>';
+  $('likedCount').textContent = likedRoads.length ? `(${likedRoads.length})` : '';
 }
 // The road's name: from a route on screen if the spot is on one, else the nearest street from Stadia
 async function roadNameAt(p){
@@ -2527,7 +2560,7 @@ const AFFIRMATIONS = [
   ['Every driver on the road was once nervous too.', 'j'], ['Water, snack, a song you like. Comfort is allowed.'], ['The quiet way is a good way.'],
   ['You can do hard things gently.'], ['Rest when you need it. Go when you’re ready.', 'p'], ['Your car, your rules, your pace.', 'j'],
   ['A wrong turn is just a longer drive.'], ['You don’t owe anyone a faster merge.', 'j'], ['Keep a little extra room ahead. It buys calm.', 'c'],
-  ['Remember a drive that went well. You did that.'], ['Panic peaks and fades. Ride it out, it will pass.', 'p'], ['Today, just this drive.'],
+  ['Remember a drive that went well. You did that.'], ['Big feelings peak and fade. This one will pass too.', 'p'], ['Today, just this drive.'],
   ['You chose a route that fits you. Smart.'], ['Breathe. Look ahead. Keep going.'], ['You’re more ready than you feel.'],
   ['The goal isn’t zero nerves. It’s getting there.'], ['Courage grows with use.'], ['You belong on this road as much as anyone.', 'j'],
   ['Steady hands, soft shoulders, easy breath.', 'p'], ['Every mile is practice.'], ['Mistakes on the road are normal. Calm recovery is the skill.', 'c'],

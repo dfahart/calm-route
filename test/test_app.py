@@ -405,7 +405,7 @@ def check(name, cond, detail=""):
     results.append((name, bool(cond), detail))
     print(("PASS " if cond else "FAIL ") + name + (f"  [{detail}]" if detail and not cond else ""))
 
-def new_page(browser, profile=None, width=1280, height=820, init_script=None, mobile=False, query=None, csp=False):
+def new_page(browser, profile=None, width=1280, height=820, init_script=None, mobile=False, query=None, csp=False, open_sections=True):
     # Playwright's own waiting helpers need eval, which the page's security policy forbids, so most tests run with the
     # policy off; the security tests turn it on (csp=True) and wait without those helpers.
     ctx = browser.new_context(viewport={"width": width, "height": height}, is_mobile=mobile, has_touch=mobile,
@@ -419,6 +419,10 @@ def new_page(browser, profile=None, width=1280, height=820, init_script=None, mo
     page.on("dialog", lambda d: (page.dialogs.append(d.message), d.dismiss()))
     install_routes(page)
     if init_script: page.add_init_script(init_script)
+    if open_sections:   # most tests reach into the profile's optional sections, which real users open with a tap
+        page.add_init_script("""new MutationObserver(() => { const s = document.getElementById('sheet');
+            if (s && s.classList.contains('open')) s.querySelectorAll('details:not([open])').forEach(d => d.open = true); })
+            .observe(document, {subtree:true, attributes:true, attributeFilter:['class'], childList:true});""")
     if profile is not None:
         page.add_init_script(f"localStorage.setItem('calmRouteProfile', {json.dumps(json.dumps(profile))});")
     page.goto("http://calm.test/" + (query or ""))
@@ -913,7 +917,7 @@ def run():
         check("profile summary shows a Never rule", page.text_content("#profileSummary").startswith("Never merges"), page.text_content("#profileSummary"))
         page.click("#editProfile")
         counts = page.evaluate("[...document.querySelectorAll('#quizBody .choices:not(.multi)')].map(c => c.children.length)")
-        check("Never is offered only for merges, bridges, tolls, dirt roads and steep hills", counts == [4, 3, 3, 4, 3, 4, 4, 4, 3, 4, 2], counts)
+        check("Never is offered only for merges, bridges, tolls, dirt roads and steep hills", counts == [4, 3, 3, 4, 3, 4, 4, 4, 3], counts)
         page.click("#sheetClose")
         page.fill("#from", "42.2005, -85.6225"); page.wait_for_selector("#from-s [role=option]"); page.locator("#from-s [role=option]").first.dispatch_event("mousedown")
         type_and_pick(page, "to", "mcdonalds", 1)
@@ -1079,12 +1083,14 @@ def run():
         page.fill("#to", ""); type_and_pick(page, "to", "mcdonalds", 1)
         find_routes(page)
 
-        # 27. Fuel cost: off by default, one quiet line per card when filled in
-        check("fuel cost is off by default", page.locator(".route .fuel").count() == 0 and not page.evaluate("document.getElementById('fuelBox').open"))
-        page.click("#fuelBox summary"); page.check("#fuelOn")
-        check("switching it on with no numbers shows nothing yet", page.locator(".route .fuel").count() == 0)
+        # 27. Gas cost: on by default for a typical car; your car lives in the profile
+        n0 = page.locator(".route").count()
+        check("gas cost shows on every route by default, for a typical car", page.locator(".route .fuel").count() == n0 and "typical car" in page.text_content(".route .fuel"), page.locator(".route .fuel").count())
+        check("the car settings are in the profile", page.locator("#sheet #fuelBox").count() == 1)
+        page.click("#editProfile")
         page.fill("#mpgCity", "25"); page.fill("#mpgHw", "40"); page.fill("#gasPrice", "3.20")
         n = page.locator(".route").count()
+        check("with your own mpg, 'typical car' goes away", "typical car" not in page.text_content("#routes"))
         check("every route shows its fuel cost", page.locator(".route .fuel").count() == n, page.locator(".route .fuel").count())
         exp = ref_gallons(page.evaluate("state.fast"), 25, 40) * 3.2
         fast_txt = page.evaluate("document.querySelector(`.route[data-i='${state.routes.indexOf(state.fast)}'] .fuel`).textContent")
@@ -1092,6 +1098,7 @@ def run():
         other = page.evaluate("document.querySelector(`.route[data-i='${state.routes.indexOf(state.routes.find(r => r !== state.fast))}'] .fuel`).textContent")
         check("other routes say how much more or less than the fastest", "than the fastest" in other or "same as the fastest" in other, other)
         page.reload(); page.wait_for_function("window.L && document.getElementById('profileSummary').textContent.length > 0")
+        page.click("#editProfile")
         check("fuel settings are remembered", page.input_value("#gasPrice") == "3.20" and page.is_checked("#fuelOn"), page.input_value("#gasPrice"))
         page.evaluate("localStorage.setItem('calmRouteFuel', '{bad json')")
         page.reload(); page.wait_for_function("window.L && document.getElementById('profileSummary').textContent.length > 0")
@@ -1104,9 +1111,10 @@ def run():
         page.fill("#from", "42.2005, -85.6225"); page.wait_for_selector("#from-s [role=option]"); page.locator("#from-s [role=option]").first.dispatch_event("mousedown")
         type_and_pick(page, "to", "mcdonalds", 1)
         find_routes(page)
-        page.click("#fuelBox summary")
-        check("nothing is sent to the car service until fuel cost is switched on", calls["car"] == [], calls["car"])
-        check("with the switch off, the car and price fields are disabled", page.is_disabled("#mpgCity") and page.is_disabled("#carYear") and page.locator(".route .fuel").count() == 0)
+        check("before you open 'Your car', only the average gas price is asked for (no car details)", all("fuelprices" in c for c in calls["car"]), calls["car"])
+        page.click("#editProfile")
+        page.uncheck("#fuelOn")
+        check("with the switch off, the car and price fields are disabled and costs are hidden", page.is_disabled("#mpgCity") and page.is_disabled("#carYear") and page.locator(".route .fuel").count() == 0)
         page.check("#fuelOn")
         page.wait_for_function("document.getElementById('carYear').options.length > 1 && document.getElementById('gasPrice').value !== ''")
         check("switching on enables the fields and loads the years", page.is_enabled("#mpgCity") and page.is_enabled("#carYear") and page.locator("#carYear option").count() == 3)
@@ -1144,7 +1152,8 @@ def run():
         page.select_option("#carModel", "Accord"); page.wait_for_function("fuel.car && fuel.car.id === '201'")
         FE["regular"] = "4.40"
         page.evaluate("const f = JSON.parse(localStorage.getItem('calmRouteFuel')); f.priceAt = Date.now() - 13 * 3600e3; localStorage.setItem('calmRouteFuel', JSON.stringify(f));")
-        page.reload(); page.wait_for_function("window.L && document.getElementById('carTrim').value === '201'")
+        page.reload(); page.wait_for_function("window.L && document.getElementById('profileSummary').textContent.length > 0"); page.click("#editProfile")
+        page.wait_for_function("document.getElementById('carTrim').value === '201'")
         check("the car is remembered after reload, with all four menus restored", [page.input_value(i) for i in ("#carYear", "#carMake", "#carModel", "#carTrim")] == ["2018", "Honda", "Accord", "201"] and page.is_checked("#fuelOn") and "2018 Honda Accord" in page.text_content("#carNote"))
         page.wait_for_function("document.getElementById('gasPrice').value === '4.40'")
         check("a price older than half a day is refreshed on the next visit", "$4.40" in page.text_content("#priceNote"), page.text_content("#priceNote"))
@@ -1153,11 +1162,14 @@ def run():
 
         FE["down"] = True
         page = new_page(browser, profile={}, init_script="localStorage.setItem('calmRouteFuel', JSON.stringify({on:true, city:'', hw:'', price:''}));")
+        page.click("#editProfile")
         page.wait_for_function("/Couldn’t reach the car lookup/.test(document.getElementById('carNote').textContent)")
         check("if the car service is down, the app says so and manual entry still works", "Type the price" in page.text_content("#priceNote"), page.text_content("#priceNote"))
+        page.evaluate("closeQuiz()")
         page.fill("#from", "42.2005, -85.6225"); page.wait_for_selector("#from-s [role=option]"); page.locator("#from-s [role=option]").first.dispatch_event("mousedown")
         type_and_pick(page, "to", "mcdonalds", 1)
         find_routes(page)
+        page.click("#editProfile")
         page.fill("#mpgCity", "25"); page.fill("#mpgHw", "35"); page.fill("#gasPrice", "3.80")
         check("typed mpg and price give costs without the car service", page.locator(".route .fuel").count() == page.locator(".route").count() and not page.errors, page.errors)
         FE["down"] = False; FE["regular"] = "4.0"

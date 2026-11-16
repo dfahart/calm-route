@@ -149,34 +149,12 @@
         <details class="briefbox" id="briefBox"><summary>Route briefing <span>Read it before you leave, so you know every turn ahead.</span></summary><ol id="briefList"></ol></details>
         <div class="handoff" id="handoffNote" hidden></div>
         <p class="note" id="detailNote"></p>
-        <details class="fuelbox" id="fuelBox">
-          <summary>Fuel cost (optional)</summary>
-          <label class="switch"><input type="checkbox" id="fuelOn" role="switch"><span>Show fuel cost on each route</span></label>
-          <fieldset id="fuelFields" disabled>
-            <legend class="sr">Your car and gas price</legend>
-            <p class="ptext">Pick your car to fill in its official mpg (US models, gas or diesel).</p>
-            <div class="cargrid">
-              <label>Year<select id="carYear" disabled><option value="">Year</option></select></label>
-              <label>Make<select id="carMake" disabled><option value="">Make</option></select></label>
-              <label>Model<select id="carModel" disabled><option value="">Model</option></select></label>
-              <label>Engine<select id="carTrim" disabled><option value="">Engine and transmission</option></select></label>
-            </div>
-            <p class="ptext" id="carNote" role="status"></p>
-            <div class="fuelgrid">
-              <label>City mpg<input id="mpgCity" type="number" inputmode="decimal" min="5" max="150" step="1" placeholder="25"></label>
-              <label>Highway mpg<input id="mpgHw" type="number" inputmode="decimal" min="5" max="150" step="1" placeholder="32"></label>
-              <label>Gas, $ per gallon<input id="gasPrice" type="number" inputmode="decimal" min="0.5" max="15" step="0.01" placeholder="3.10"></label>
-            </div>
-            <p class="ptext" id="priceNote" role="status"></p>
-          </fieldset>
-          <p class="ptext">Cost is an estimate from each road’s typical speed: stop-and-go streets at your city mpg, steady roads around 50 mph at your highway mpg, fast freeways a little more. How you drive can change it by 10 to 30%. Your car and price are saved only in this browser.</p>
-        </details>
       </div>
 
       <details class="how" id="privacyBox">
         <summary>Privacy and feedback</summary>
         <p><b>Your data stays with you.</b> Your profile, places, avoided spots, roads you like and drive log are saved only in this browser. There are no accounts, no ads and no tracking, and there is no Calm Route server. You can back it all up or delete it under Your data in your profile.</p>
-        <p><b>What other services see.</b> To find routes, the addresses you type and the points of your trip go to the map service (<span id="privMap">Stadia Maps</span>), which also sends the map pictures for the area you view. Points along your route go to the US National Weather Service for the weather on the way. If you pick your car, its make and model go to fueleconomy.gov. Google Maps, Apple Maps or Waze see your trip only when you open it there.</p>
+        <p><b>What other services see.</b> To find routes, the addresses you type and the points of your trip go to the map service (<span id="privMap">Stadia Maps</span>), which also sends the map pictures for the area you view. Points along your route go to the US National Weather Service for the weather on the way. For gas costs, the app asks fueleconomy.gov for the US average gas price, and if you pick your car, its make and model go there too. Google Maps, Apple Maps or Waze see your trip only when you open it there.</p>
         <p id="feedbackRow" hidden><b>Something feel off?</b> <a id="feedbackLink" href="#">Send feedback</a>. A route that felt wrong, a stop it shouldn’t have picked, anything. Calm Route gets better from real drives.</p>
       </details>
 
@@ -209,7 +187,8 @@
   </section>
 
   <div class="mapwrap">
-    <div id="map" role="region" aria-label="Map"></div>
+    <div class="pickbar" id="pickBar" hidden role="status"><span id="pickText"></span> <button type="button" class="ghost" id="pickCancel">Cancel</button></div>
+<div id="map" role="region" aria-label="Map"></div>
     <div class="map-legend" aria-hidden="true">
       <div><i></i>Chosen route</div>
       <div><i class="fast"></i>Fastest route</div>
@@ -223,11 +202,37 @@
     <h2 id="sheetTitle">What makes driving stressful for you?</h2>
     <p class="lede">A few quick answers. Routes are scored around them, and you can change them anytime.</p>
     <div id="quizBody"></div>
+    <div id="quizLikes"></div>
+    <details class="psection fuelbox" id="fuelBox">
+      <summary>Your car and gas cost <span class="opt">optional</span></summary>
+      <label class="switch"><input type="checkbox" id="fuelOn" role="switch"><span>Show gas cost on each route</span></label>
+      <fieldset id="fuelFields" disabled>
+        <legend class="sr">Your car and gas price</legend>
+        <p class="ptext">Without a car, costs are for a typical car (25 mpg in town, 32 on the highway). Pick yours to fill in its official mpg (US models, gas or diesel).</p>
+        <div class="cargrid">
+          <label>Year<select id="carYear" disabled><option value="">Year</option></select></label>
+          <label>Make<select id="carMake" disabled><option value="">Make</option></select></label>
+          <label>Model<select id="carModel" disabled><option value="">Model</option></select></label>
+          <label>Engine<select id="carTrim" disabled><option value="">Engine and transmission</option></select></label>
+        </div>
+        <p class="ptext" id="carNote" role="status"></p>
+        <div class="fuelgrid">
+          <label>City mpg<input id="mpgCity" type="number" inputmode="decimal" min="5" max="150" step="1" placeholder="25"></label>
+          <label>Highway mpg<input id="mpgHw" type="number" inputmode="decimal" min="5" max="150" step="1" placeholder="32"></label>
+          <label>Gas, $ per gallon<input id="gasPrice" type="number" inputmode="decimal" min="0.5" max="15" step="0.01" placeholder="3.10"></label>
+        </div>
+        <p class="ptext" id="priceNote" role="status"></p>
+      </fieldset>
+      <p class="ptext">Cost is an estimate from each road’s typical speed: stop-and-go streets at your city mpg, steady roads around 50 mph at your highway mpg, fast freeways a little more. How you drive can change it by 10 to 30%. Your car and price are saved only in this browser.</p>
+    </details>
+    <details class="psection" id="moreBox"><summary>More settings <span class="opt">optional</span></summary>
+    <div id="quizMore"></div>
     <fieldset><legend>Daily encouragement</legend><div class="choices" id="dailyChoice" role="group" aria-label="Daily encouragement">
       <button type="button" data-daily="affirm">Affirmation</button><button type="button" data-daily="verse">Bible verse</button><button type="button" data-daily="off">Off</button></div></fieldset>
-    <fieldset id="spotBox"><legend>Spots you avoid</legend><div id="spotList"></div></fieldset>
-    <fieldset id="likedBox"><legend>Roads you like</legend><div id="likedList"></div></fieldset>
-    <fieldset id="dataBox"><legend>Your data</legend>
+    </details>
+    <details class="psection" id="spotBox"><summary>Spots you avoid <span class="count" id="spotCount"></span></summary><div id="spotList"></div></details>
+    <details class="psection" id="likedBox"><summary>Roads you like <span class="count" id="likedCount"></span></summary><div id="likedList"></div></details>
+    <details class="psection" id="dataBox"><summary>Your data</summary>
       <p class="lede" style="margin:0 0 8px">Everything Calm Route knows about you is saved only in this browser. Nothing is sent to a Calm Route server; there isn’t one.</p>
       <div class="databtns">
         <button type="button" class="ghost" id="dataSave">Save a backup file</button>
@@ -238,7 +243,7 @@
       <div id="dataConfirm" hidden><p class="lede" style="margin:8px 0">This deletes your profile, places, avoided spots, pebbles, drive log and settings from this browser. It can’t be undone.</p>
         <button type="button" class="btn danger" id="dataWipeYes">Yes, delete everything</button> <button type="button" class="ghost" id="dataWipeNo">Keep my data</button></div>
       <p class="lede" id="dataNote" role="status" aria-live="polite" style="margin:8px 0 0"></p>
-    </fieldset>
+    </details>
     <div class="sheet-foot">
       <small>Saved only in this browser.</small>
       <button class="btn btn-primary" type="button" id="saveProfile">Save profile</button>
