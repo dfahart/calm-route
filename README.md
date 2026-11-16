@@ -18,7 +18,8 @@ If you're a developer picking this up, start with [DEVELOPING.md](DEVELOPING.md)
 | `js/calm-route.js` | All the app's logic, in labelled sections (a table of contents is at the top). |
 | `index.html` | Sends visitors from the site's front door to `calm-route.html`. |
 | `signals/US-MI.js` | Michigan traffic lights (35,481), so the app can tell lefts with a light from lefts without one. |
-| `signals/US-IN.js`, `signals/US-OH.js` | Indiana and Ohio traffic lights. Built by the monthly GitHub job; until a file exists, lefts there are described more cautiously. |
+| `signals/US-IN.js`, `US-OH.js`, `US-FL.js` | Indiana, Ohio and Florida traffic lights. Built by the monthly GitHub job (it can also be run for one state from the Actions tab); until a file exists, lefts there are described more cautiously. |
+| `tools/fetch_signals.py` | Downloads a state's traffic lights in tiles, so the busy public servers don't time out. |
 | `tools/build_signals.py` | Builds a traffic-light file from OpenStreetMap data. |
 | `.github/workflows/refresh-signals.yml` | Monthly automatic refresh of the traffic-light files. |
 | `test/test_app.py`, `test/test_more.py` | The automated checks (about 520), run in two batches. |

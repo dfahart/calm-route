@@ -65,7 +65,8 @@ const SIGNALS_KNOWN = !STADIA;
 // signal flags are used where it has them.
 const SIGNAL_REGIONS = [{id:'US-MI', bbox:[41.69, -90.42, 48.31, -82.12], url:'signals/US-MI.js'},
                         {id:'US-IN', bbox:[37.77, -88.10, 41.77, -84.78], url:'signals/US-IN.js'},     // Indiana and Ohio: built by the monthly job
-                        {id:'US-OH', bbox:[38.40, -84.82, 41.98, -80.52], url:'signals/US-OH.js'}];    // until a file exists, lefts there are described cautiously
+                        {id:'US-OH', bbox:[38.40, -84.82, 41.98, -80.52], url:'signals/US-OH.js'},
+                        {id:'US-FL', bbox:[24.39, -87.64, 31.01, -79.97], url:'signals/US-FL.js'}];   // Florida: the whole rectangle, so it also covers south Georgia and Alabama    // until a file exists, lefts there are described cautiously
 const SIGNAL_RADIUS = 0.025;   // miles, about 40 m
 const SIGNAL_CELL = 0.001;     // degrees, for the lookup grid
 const signalSets = {};         // region id -> {bbox, grid} once loaded, or null if it couldn't load

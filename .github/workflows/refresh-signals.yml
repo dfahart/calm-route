@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: "17 6 3 * *"     # 06:17 UTC on the 3rd of each month
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Just one state, e.g. US-FL (leave empty for all)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -20,7 +25,8 @@ jobs:
         region:
           # id, then the rectangle south, west, north, east. The app treats everything inside the rectangle as
           # covered, so always query the whole rectangle (never a state outline). Keep in step with
-          # SIGNAL_REGIONS in calm-route.html.
+          # SIGNAL_REGIONS in js/calm-route.js.
+          - { id: US-FL, bbox: "24.39 -87.64 31.01 -79.97" }
           - { id: US-IN, bbox: "37.77 -88.10 41.77 -84.78" }
           - { id: US-OH, bbox: "38.40 -84.82 41.98 -80.52" }
           - { id: US-MI, bbox: "41.69 -90.42 48.31 -82.12" }
@@ -28,23 +34,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download traffic lights
-        run: |
-          set -euo pipefail
-          read S W N E <<< "${{ matrix.region.bbox }}"
-          Q="[out:json][timeout:400];node($S,$W,$N,$E)[\"highway\"=\"traffic_signals\"];out skel qt;"
-          # The public servers are busy at times: three servers, three rounds, waiting longer each round
-          for round in 1 2 3; do
-            for server in https://overpass-api.de https://overpass.kumi.systems https://overpass.private.coffee; do
-              if curl -sS --fail --max-time 450 -A "CalmRoute-signal-refresh/1 (monthly)" \
-                   --data-urlencode "data=$Q" "$server/api/interpreter" -o raw.json; then break 2; fi
-              rm -f raw.json; echo "$server failed (round $round), trying the next one"; sleep 20
-            done
-            sleep $((round * 120))
-          done
-          test -s raw.json || { echo "::error::Every server failed for ${{ matrix.region.id }}; the old file stays."; exit 1; }
-          python3 -c "import json; d=json.load(open('raw.json')); json.dump([[e['lat'], e['lon']] for e in d['elements']], open('points.json', 'w'))"
+        if: ${{ !inputs.only || inputs.only == matrix.region.id }}
+        run: python3 tools/fetch_signals.py ${{ matrix.region.bbox }} points.json
 
       - name: Sanity check
+        if: ${{ !inputs.only || inputs.only == matrix.region.id }}
         run: |
           # A broken download usually comes back nearly empty; never replace a good file with one
           python3 - <<'EOF'
@@ -60,9 +54,11 @@ jobs:
           EOF
 
       - name: Build
+        if: ${{ !inputs.only || inputs.only == matrix.region.id }}
         run: python3 tools/build_signals.py points.json ${{ matrix.region.id }} ${{ matrix.region.bbox }} signals
 
       - name: Commit if changed
+        if: ${{ !inputs.only || inputs.only == matrix.region.id }}
         run: |
           git config user.name "calm-route-bot"
           git config user.email "calm-route-bot@users.noreply.github.com"

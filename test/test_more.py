@@ -373,7 +373,7 @@ with sync_playwright() as p:
     check("the privacy note says data stays in the browser and names who sees what", "no Calm Route server" in txt and "National Weather Service" in txt and "fueleconomy.gov" in txt and "demo servers" in page.text_content("#privMap"), txt[:120])
     check("with no feedback address set, the feedback link stays hidden", page.evaluate("$('feedbackRow').hidden") is True)
     regs = page.evaluate("SIGNAL_REGIONS.map(r => r.id)")
-    check("Indiana and Ohio traffic-light areas are listed", regs == ["US-MI", "US-IN", "US-OH"], regs)
+    check("Indiana, Ohio and Florida traffic-light areas are listed", regs == ["US-MI", "US-IN", "US-OH", "US-FL"], regs)
     ok = page.evaluate("loadSignals(SIGNAL_REGIONS[1]).then(() => signalSets['US-IN'] === null && lightNear([40.0, -86.0]) === null)")
     check("until the Indiana file exists, Indiana lefts fall back quietly to the careful wording", ok is True, ok)
     check("no errors with the privacy and lights changes", not page.errors, page.errors)
