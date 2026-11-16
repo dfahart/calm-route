@@ -589,6 +589,35 @@ with sync_playwright() as p:
     check("no errors in the Florida fixes", not page.errors, page.errors)
     page.context.close()
     T.STOP_AT[0] = T.STOP_AT[1] = 0
+    # Gas from a fixed list of chains; members-only clubs only if chosen; places you like; learn from picks, then ask
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    words = page.evaluate("[STOP_WORDS.gas.length, STOP_WORDS.gas.includes('Gas'), stopWords('gas').some(w => /costco|sam|bj/i.test(w))]")
+    check("gas comes from about 20 named chains, never a plain 'gas' search, and no members-only clubs by default", words == [20, False, False], words)
+    page.click("#editProfile"); page.wait_for_selector("#quizBody [data-m]")
+    check("the profile has 'Gas stations you like' and 'Drive-thrus you like'", "Gas stations you like" in page.text_content("#quizBody") and "Drive-thrus you like" in page.text_content("#quizBody"))
+    page.click("#quizBody [data-m=\"Costco Gas\"]"); page.click("#quizBody [data-m=\"Shell\"]"); page.click("#saveProfile")
+    check("choosing Costco and Shell saves them", page.evaluate("JSON.parse(localStorage.getItem('calmRouteProfile')).likedBrands") == ["Costco Gas", "Shell"])
+    fits = page.evaluate("[stopWords('gas').includes('Costco Gas'), nameFits('Costco Gas', 'Costco Gasoline'), nameFits('Costco Gas', 'Costco Wholesale'), nameFits('Costco Gas', 'Costco Gas Station'), isBrand('gas', 'Costco Wholesale')]")
+    check("a chosen club is searched, and only its gas station counts (not the warehouse store)", fits == [True, True, False, True, False], fits)
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    pts = page.evaluate("(() => { const s = state.sel.shape, c = state.sel.cum; return [s[c.findIndex(x => x >= 1.0)], s[c.findIndex(x => x >= 1.6)]]; })()")
+    T.STOP_AT[0], T.STOP_AT[1] = pts[0]; T.LEFT_AT[0], T.LEFT_AT[1] = pts[1]
+    sc = page.evaluate("""(async () => { const a = await findStops('gas', true); profile = {...profile, likedBrands:[]}; const b2 = await findStops('gas', true); profile = {...profile, likedBrands:['Costco Gas', 'Shell']};
+        const f = (l, n) => (l.find(x => x.main === n) || {}).score; return [f(a, 'Shell') - f(b2, 'Shell'), f(a, 'Speedway') - f(b2, 'Speedway')]; })()""")
+    check("a station you like counts as an easier stop (by one point), others are unchanged", sc and abs(sc[0] + 1) < 1e-6 and abs(sc[1]) < 1e-6, sc)
+    page.evaluate("profile = {...profile, likedBrands:[]}")
+    for k in range(2):
+        page.click("#stopBox [data-stop=gas]"); page.wait_for_selector("#stopList [data-addstop]", timeout=10000)
+        names = page.locator("#stopList li").all_inner_texts()
+        idx = next(i for i, x in enumerate(names) if "Shell" in x)
+        page.click(f"#stopList [data-addstop=\"{idx}\"]")
+        page.wait_for_function("state.trip && state.trip.stops.length && !$('app').classList.contains('busy')", timeout=30000)
+    check("choosing Shell over the top pick twice asks whether to prefer Shell", idx > 0 and "Prefer Shell" in page.text_content("#brandAsk"), [idx, page.text_content("#brandAsk")])
+    page.click("#brandAsk [data-brand=yes]")
+    check("saying yes adds Shell to the stations you like", page.evaluate("profile.likedBrands") == ["Shell"] and "Stations you like" in page.text_content("#brandAsk"))
+    check("no errors with chains and places you like", not page.errors, page.errors)
+    page.context.close()
+    T.STOP_AT[0] = T.STOP_AT[1] = 0; T.LEFT_AT[0] = T.LEFT_AT[1] = 0
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];

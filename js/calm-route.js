@@ -2121,6 +2121,7 @@ try {
     if (practice.levels && typeof practice.levels !== 'object') practice.levels = null;
     if (!Array.isArray(practice.history)) practice.history = [];
     if (!practice.declined || typeof practice.declined !== 'object') practice.declined = {};
+    if (!practice.brandPicks || typeof practice.brandPicks !== 'object') practice.brandPicks = {};
     if (practice.pending && (typeof practice.pending !== 'object' || (practice.pending.route && !Array.isArray(practice.pending.route.pts)))) practice.pending = null;
   }
 } catch(e){}
@@ -2336,13 +2337,22 @@ function renderProfileSummary(){
 function openQuiz(){
   lastFocus = document.activeElement;
   const draft = {...profile};
+  draft.likedBrands = likedBrands().slice();
+  const multi = (legend, opts) => `<fieldset><legend>${legend}</legend><div class="choices multi">` +
+    opts.map(o => `<button type="button" data-m="${esc(o.v)}" aria-pressed="${draft.likedBrands.includes(o.v)}">${esc(o.label)}</button>`).join('') + '</div></fieldset>';
   const group = (key, legend, opts, isLevel) => `<fieldset><legend>${legend}</legend><div class="choices" data-k="${key}">` +
     opts.map((o, i) => { const v = isLevel ? i : o.key; return `<button type="button" data-v="${v}" aria-pressed="${draft[key] === v}">${esc(o.label)}</button>`; }).join('') + '</div></fieldset>';
   $('quizBody').innerHTML = QUESTIONS.map(q => group(q.key, esc(q.text), q.hard ? LEVELS : LEVELS.slice(0, 3), true)).join('') + group('worry', 'When you drive, what worries you most? (optional)', WORRIES, false)
     + '<p class="lede" style="margin:-4px 0 12px">This only fine-tunes how routes are scored. Your answer stays on this device and is never sent anywhere.</p>'
     + group('view', 'How much detail do you want?', VIEWS, false)
-    + '<p class="lede" style="margin:-4px 0 12px">“Just the calm pick” shows the route Calm Route recommends and only what you need to know. You can switch any time on the results.</p>';
+    + '<p class="lede" style="margin:-4px 0 12px">“Just the calm pick” shows the route Calm Route recommends and only what you need to know. You can switch any time on the results.</p>'
+    + multi('Gas stations you like (optional)', [...GAS_CHAINS.map(w => ({v:w, label:chainLabel(w)})), ...CLUB_GAS.map(c => ({v:c.word, label:c.label}))])
+    + '<p class="lede" style="margin:-4px 0 12px">When one of these is an easy stop on your way, Need gas picks it. Warehouse clubs are only used if you choose them here, since you need a membership.</p>'
+    + multi('Drive-thrus you like (optional)', STOP_WORDS.food.filter(w => DRIVE_THRU.test(w)).map(w => ({v:w, label:w})));
   $('quizBody').onclick = e => {
+    const mb = e.target.closest('button[data-m]');
+    if (mb){ const v = mb.dataset.m, on = !draft.likedBrands.includes(v);
+      draft.likedBrands = on ? [...draft.likedBrands, v] : draft.likedBrands.filter(x => x !== v); mb.setAttribute('aria-pressed', on); return; }
     const b = e.target.closest('button[data-v]'); if (!b) return;
     const k = b.parentElement.dataset.k; draft[k] = k === 'worry' || k === 'view' ? b.dataset.v : +b.dataset.v;
     [...b.parentElement.children].forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
@@ -2611,17 +2621,33 @@ renderDaily(); renderDailyChoice();
 // Places within half a mile of the chosen route, nearest to the route first. Choosing one sends every
 // route through it and adds it as a stop in the map app.
 // Search matches place names, so look for the names people know ("gas station" would also find fire stations)
+// Gas: a fixed list of about 20 national and regional chains, and nothing else. A plain "gas" search found city fleet
+// pumps and a seashell shop; a known chain is a real station open to the public.
+const GAS_CHAINS = ['Shell', 'BP', 'Mobil', 'Exxon', 'Chevron', 'Marathon', 'Speedway', 'Sunoco', 'Citgo', 'Circle K', 'Valero', 'Phillips 66',
+  'Wawa', 'Sheetz', 'RaceTrac', 'QuikTrip', 'Casey\'s', 'Kwik Trip', 'Murphy USA', 'Meijer Gas'];
+// Members-only pumps: searched only for drivers who say they're members (in "Stations you like")
+const CLUB_GAS = [{word:'Costco Gas', key:'costco', label:'Costco (members)'}, {word:'Sam\'s Club Gas', key:'samsclub', label:'Sam\'s Club (members)'}, {word:'BJ\'s Gas', key:'bjs', label:'BJ\'s (members)'}];
 const STOP_WORDS = {
-  gas:['Speedway', 'Shell', 'Marathon', 'Mobil', 'BP', 'Sunoco', 'Citgo', 'Meijer Gas', 'Costco Gas', 'Circle K', 'Casey\'s', 'Kwik Trip', 'Exxon', 'Phillips 66', 'Valero', 'Wawa', 'Sheetz', 'Gas'],
+  gas:GAS_CHAINS,
   coffee:['Starbucks', 'Biggby Coffee', 'Dunkin', 'Tim Hortons', 'Coffee'],
   food:['McDonald\'s', 'Wendy\'s', 'Burger King', 'Taco Bell', 'Subway', 'Chick-fil-A', 'Culver\'s', 'Arby\'s', 'Panera', 'Chipotle']
 };
+// The places a driver likes, from the comfort profile: liked chains win when they're an easy stop on the way
+const likedBrands = () => Array.isArray(profile.likedBrands) ? profile.likedBrands : [];
+const clubFor = w => CLUB_GAS.find(c => c.word === w);
+const stopWords = kind => kind === 'gas' ? [...GAS_CHAINS, ...CLUB_GAS.filter(c => likedBrands().includes(c.word)).map(c => c.word)] : STOP_WORDS[kind];
+// Does this name belong to this search word? Clubs need a fuel word too: a Costco store isn't its gas station
+const nameFits = (w, name) => { const c = clubFor(w), n = squash(name || '');
+  return c ? n.includes(c.key) && FUEL_WORD.test(name) : n.includes(squash(w).replace(/s$/, '')); };
+const chainLabel = w => (clubFor(w) || {}).label || (w === 'Meijer Gas' ? 'Meijer' : w);
+const brandOf = (kind, name) => stopWords(kind).find(w => !GENERIC_STOP.has(w) && nameFits(w, name)) || null;
 const stopLimit = limiter(STADIA ? 4 : 2);   // brand searches a few at a time: a burst of 20-30 trips the services' fair-use limits
 const DRIVE_THRU = /mcdonald|wendy|burger king|taco bell|chick-fil-a|culver|arby|starbucks|biggby|dunkin|tim hortons/i;   // chains that reliably have a drive-thru
 const STOP_BAD = /\b(apartments?|school|church|parking|fire|police|station \d|department|car wash|headquarters|office|city of|county|township|village of|municipal|public works|dpw|fleet|streets?\s*(&|and)\s*equipment|garage|depot|yard|employees?|private|service center|maintenance|transit|airport)\b/i;   // government and fleet pumps aren't for the public
 const GENERIC_STOP = new Set(['Gas', 'Coffee']);   // a match on just the word, not a brand: listed for the driver to judge, never picked automatically
-const FUEL_WORD = /\b(gas|fuel|station|food ?mart|mart|express|petro|truck stop)\b/i;
-const isBrand = (kind, name) => STOP_WORDS[kind].some(w => { if (GENERIC_STOP.has(w)) return false;
+const FUEL_WORD = /\b(gas|gasoline|fuel|station|food ?mart|mart|express|petro|truck stop)\b/i;
+const isBrand = (kind, name) => stopWords(kind).some(w => { if (GENERIC_STOP.has(w)) return false;
+  if (clubFor(w)) return nameFits(w, name);
   const b = squash(w).replace(/s$/, ''), n = squash(name);
   return kind === 'gas' ? n.startsWith(b) || (n.includes(b) && FUEL_WORD.test(name)) : n.includes(b); });
 const GAS_BAD = /\b(shop|shoppe|gifts?|boutique|seashells?|souvenirs?|gallery|oil change|lube|car wash|tire)\b/i;   // not somewhere to fill up
@@ -2636,7 +2662,7 @@ async function findStops(kind, quiet){
   const box = {minLat:minLat - m, maxLat:maxLat + m, minLon:minLon - m * 1.4, maxLon:maxLon + m * 1.4};
   const mid = r.shape[Math.floor(r.shape.length / 2)];
   let failed = 0;
-  const jobs = STOP_WORDS[kind].map(w => stopLimit(() => STADIA
+  const jobs = stopWords(kind).map(w => stopLimit(() => STADIA
     ? stadiaGet('https://api.stadiamaps.com/geocoding/v1/search', new URLSearchParams({text:w, size:'25', layers:'venue', 'focus.point.lat':mid[0].toFixed(5), 'focus.point.lon':mid[1].toFixed(5),
         'boundary.rect.min_lat':box.minLat.toFixed(5), 'boundary.rect.max_lat':box.maxLat.toFixed(5), 'boundary.rect.min_lon':box.minLon.toFixed(5), 'boundary.rect.max_lon':box.maxLon.toFixed(5)}).toString())
         .then(fs => fs.map(f => ({...fromPelias(f), word:w})))
@@ -2645,7 +2671,7 @@ async function findStops(kind, quiet){
   const seen = new Set(), out = [];
   for (const f of (await Promise.all(jobs)).flat()){
     const it = toItem(f, null);
-    if (!squash(it.main || '').includes(squash(f.word).replace(/s$/, ''))) continue;   // the name must really contain the brand (not "Jena King" for Burger King)
+    if (!nameFits(f.word, it.main)) continue;   // the name must really contain the brand (not "Jena King" for Burger King)
     const k = norm(it.main) + it.lat.toFixed(3) + it.lon.toFixed(3); if (seen.has(k) || !it.main || STOP_BAD.test(it.main) || (kind === 'gas' && GAS_BAD.test(it.main)) || it.isRoad || it.isPlace) continue; seen.add(k);
     const n = nearestOnShape(r.shape, [it.lat, it.lon]);
     if (n.d > 0.5 || r.cum[n.i] < 0.2 || r.total - r.cum[n.i] < 0.2) continue;          // not right at the start or the end
@@ -2669,12 +2695,13 @@ async function findStops(kind, quiet){
     // Easy-stop score (lower is better): off the route costs most, then a highway exit, the left side,
     // being right at a turn, and going past the first 3 miles; drive-thru chains get a small bonus for food and coffee
     const score = n.d * 6 + (onHw ? 2.5 : 0) + (atTurn ? 0.5 : right ? 0 : atLight ? 0.6 : 1.5) + Math.max(0, at - 3) * 0.4 + at * 0.05
-                - (kind !== 'gas' && DRIVE_THRU.test(it.main) ? 0.3 : 0);
+                - (kind !== 'gas' && DRIVE_THRU.test(it.main) ? 0.3 : 0)
+                - (likedBrands().includes(brandOf(kind, it.main)) ? 1 : 0);   // a place you like wins over a similar one nearby
     // The same place listed twice ("Meijer" and "Meijer Gas Station"): keep the better-scored one. Two different
     // brands on opposite corners are both kept.
     const twin = out.findIndex(o => hav([o.lat, o.lon], [it.lat, it.lon]) < 0.04 && (squash(o.main).includes(squash(it.main)) || squash(it.main).includes(squash(o.main))));
     if (twin >= 0){ if (out[twin].score <= score) continue; out.splice(twin, 1); }
-    out.push({...it, off:n.d, at, right, atTurn, atLight, onHw, score, brand:isBrand(kind, it.main), extra:Math.max(1, Math.round((onHw ? 1.5 : 0) + n.d * 2 / 25 * 60 + 1))});   // there and back at about 25 mph
+    out.push({...it, off:n.d, at, right, atTurn, atLight, onHw, score, brand:isBrand(kind, it.main), chain:brandOf(kind, it.main), extra:Math.max(1, Math.round((onHw ? 1.5 : 0) + n.d * 2 / 25 * 60 + 1))});   // there and back at about 25 mph
   }
   out.sort((a, b) => a.score - b.score);
   out.forEach(o => o.kind = kind);
@@ -2688,7 +2715,7 @@ async function findStops(kind, quiet){
   $('stopList').dataset.items = JSON.stringify(out.slice(0, 5).map(asStop));
   return out;
 }
-const asStop = (s, extra) => ({kind:s.kind, main:s.main, sub:s.sub, full:s.full || null, lat:s.lat, lon:s.lon, at:s.at, right:s.right, atTurn:s.atTurn, atLight:!!s.atLight, onHw:s.onHw, ...extra});
+const asStop = (s, extra) => ({kind:s.kind, chain:s.chain || null, main:s.main, sub:s.sub, full:s.full || null, lat:s.lat, lon:s.lon, at:s.at, right:s.right, atTurn:s.atTurn, atLight:!!s.atLight, onHw:s.onHw, ...extra});
 const STOP_NAMES = {gas:'Gas', coffee:'Coffee', food:'Food'};
 const stopKind = st => STOP_NAMES[st.kind] || 'Stop';
 const sideText = st => st.onHw ? 'off a highway exit' : st.atTurn ? 'at a turn' : st.right ? 'on your right' : st.atLight ? 'on your left, at a light' : 'on your left';
@@ -2712,6 +2739,25 @@ function keepVia(r, stop){
 }
 let stopsCleared = false;   // a switch took the old stop away; the routes must be redone even if no new stop is found
 const hasKind = k => state.stops.some(st => st.kind === k);
+// Picking the same chain by hand, over the one Calm Route ranked first, twice or more: offer to prefer it.
+// Only ever asked, never assumed; "Not now" holds for a month.
+function notePick(it){
+  const b = it.chain; if (!b || likedBrands().includes(b)) return;
+  practice.brandPicks = {...(practice.brandPicks || {}), [b]:((practice.brandPicks || {})[b] || 0) + 1}; savePractice();
+  const n = practice.brandPicks[b], d = (practice.declined || {})['brand:' + b];
+  if (n < 2 || (d && Date.now() - d < 30 * 864e5)) return;
+  $('brandAsk').innerHTML = `<div class="suggest"><p>You’ve chosen ${esc(chainLabel(b))} ${n === 2 ? 'twice' : n + ' times'}. Prefer ${esc(chainLabel(b))} when one’s an easy stop on your way?</p>
+    <button type="button" data-brand="yes" data-b="${esc(b)}">Yes, prefer ${esc(chainLabel(b))}</button> <button type="button" class="ghost" data-brand="no" data-b="${esc(b)}">Not now</button></div>`;
+}
+$('brandAsk').addEventListener('click', e => {
+  const x = e.target.closest('[data-brand]'); if (!x) return;
+  const b = x.dataset.b;
+  if (x.dataset.brand === 'yes'){
+    profile = {...profile, likedBrands:[...likedBrands().filter(v => v !== b), b]};
+    try { localStorage.setItem('calmRouteProfile', JSON.stringify(profile)); } catch(err){}
+    $('brandAsk').innerHTML = `<p class="lede">Done. ${esc(chainLabel(b))} is in “Stations you like” in your comfort profile, where you can change it.</p>`;
+  } else { practice.declined = {...(practice.declined || {}), ['brand:' + b]:Date.now()}; savePractice(); $('brandAsk').innerHTML = ''; }
+});
 // "Need gas" / "Need food": after the routes come in, stop at the easiest place near the start of the chosen route.
 // With both on, a gas station with a drive-thru right beside it (same lot or corner) becomes one stop for both.
 // Does the drive leave a stop back along the road it came in on? Miles of the first half-mile after the stop that run
@@ -2794,6 +2840,7 @@ $('stopBox').addEventListener('click', e => {
   if (a){ const it = JSON.parse($('stopList').dataset.items || '[]')[+a.dataset.addstop]; if (!it) return;
     // one of each kind: a new gas stop replaces the old one (and a gas-and-food stop keeps the food side only if it's a separate place)
     Object.entries(AUTO).forEach(([k, id]) => { if (k !== it.kind) $(id).checked = false; });
+    if (+a.dataset.addstop > 0) notePick(it);      // chose this over the one Calm Route ranked first
     setStops([it]); renderStop(); setStatus(`Finding routes through ${it.main}…`); submitTrip(); return; }
   const rm = e.target.closest('[data-remove]');
   if (rm){ const st = state.stops[+rm.dataset.remove]; if (!st) return;

@@ -63,8 +63,8 @@ a{color:var(--lake)}
 .tag.trusted{background:#EEF4EA;color:#3E5F35}
 .route p.trusted{font-size:14px;color:var(--sub);margin:6px 0 0}
 .route p.trusted .ghost{font-size:14px;padding:2px 6px}
-#driveAsk .suggest{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
-#driveAsk .suggest p{margin:0 0 8px}
+#brandAsk .suggest, #driveAsk .suggest{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+#brandAsk .suggest p, #driveAsk .suggest p{margin:0 0 8px}
 
 .profile-pill{width:100%;display:flex;align-items:center;gap:10px;text-align:left;padding:10px 14px;border:1px solid var(--line);background:var(--paper);border-radius:var(--r-md);cursor:pointer;margin-bottom:16px}
 .profile-pill:hover{border-color:var(--lake)}
@@ -373,3 +373,9 @@ legend{font-weight:700;margin-bottom:8px;padding:0}
   .actionbar:not(.showopts) .actionrow, .actionbar:not(.showopts) .copybox{display:none !important}
 }
 @media (prefers-reduced-motion:reduce){ .progress i{transition:none} }
+
+/* places you like: several can be chosen */
+.choices.multi{flex-wrap:wrap}
+.choices.multi button{flex:0 0 auto}
+#brandAsk:empty{display:none}
+#brandAsk{margin-top:8px}

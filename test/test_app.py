@@ -912,7 +912,7 @@ def run():
         page = new_page(browser, profile={"merge": 3})
         check("profile summary shows a Never rule", page.text_content("#profileSummary").startswith("Never merges"), page.text_content("#profileSummary"))
         page.click("#editProfile")
-        counts = page.evaluate("[...document.querySelectorAll('#quizBody .choices')].map(c => c.children.length)")
+        counts = page.evaluate("[...document.querySelectorAll('#quizBody .choices:not(.multi)')].map(c => c.children.length)")
         check("Never is offered only for merges, bridges, tolls, dirt roads and steep hills", counts == [4, 3, 3, 4, 3, 4, 4, 4, 3, 4, 2], counts)
         page.click("#sheetClose")
         page.fill("#from", "42.2005, -85.6225"); page.wait_for_selector("#from-s [role=option]"); page.locator("#from-s [role=option]").first.dispatch_event("mousedown")
