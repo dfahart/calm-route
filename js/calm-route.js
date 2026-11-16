@@ -123,6 +123,7 @@ const VARIANTS = [
   {kind:'notoll',   hw:0.5, tolls:0.0, mp:12, notoll:true},
   {kind:'liked',    hw:0.5, tolls:0.3, mp:12, via:true},
   {kind:'trusted',  hw:0.5, tolls:0.3, mp:12, trusted:true},
+  {kind:'kept',     hw:0.5, tolls:0.3, mp:12, kept:true},
 ];
 const MAX_TRIP_MILES = 900;
 
@@ -726,6 +727,10 @@ async function stadiaPlaces(raw, ref, wide){
     if (want.length >= 3 && out.some(hit)){ const yes = out.filter(hit), no = out.filter(it => !hit(it)); out = yes.length >= 3 ? yes : yes.concat(no); }
   }
   if (!explicit && out.some(it => it.dist != null && it.dist <= 100)) out = out.filter(it => it.dist == null || it.dist <= 160);
+  {
+    const want = squash(head || raw), exact = out.findIndex(it => squash(it.main) === want);
+    if (exact > 0) out.unshift(...out.splice(exact, 1));
+  }
   const label = ref && ref.label ? ref.label : 'you';
   const hint = corrected ? `No match for “${head}”, so these are results for “${corrected}”.`
     : alias && out.some(it => norm(it.main).includes(norm(alias))) ? `Including results for “${alias}”.`
@@ -1012,7 +1017,7 @@ function limiter(max){
 const polite = limiter(STADIA ? 6 : 3);   // the paid service takes more at once
 // One route request; the fastest one also asks for alternates (extra choices for no extra time)
 const routeBody = (v, trip, alternates, withSpots) => ({
-  locations:[{lat:trip.from.lat, lon:trip.from.lon}, ...((trip.stops || []).length ? trip.stops.map(st => ({lat:st.lat, lon:st.lon, type:'through'})) : v.trusted && trip.trusted ? trip.trusted.via.map(p => ({lat:p[0], lon:p[1], type:'through'})) : v.via && trip.likedVia ? [{lat:trip.likedVia.lat, lon:trip.likedVia.lon, type:'through'}] : []), {lat:trip.to.lat, lon:trip.to.lon}],
+  locations:[{lat:trip.from.lat, lon:trip.from.lon}, ...(v.kept && trip.keepVia ? trip.keepVia.map(p => ({lat:p[0], lon:p[1], type:'through'})) : (trip.stops || []).length ? trip.stops.map(st => ({lat:st.lat, lon:st.lon, type:'through'})) : v.trusted && trip.trusted ? trip.trusted.via.map(p => ({lat:p[0], lon:p[1], type:'through'})) : v.via && trip.likedVia ? [{lat:trip.likedVia.lat, lon:trip.likedVia.lon, type:'through'}] : []), {lat:trip.to.lat, lon:trip.to.lon}],
   costing:'auto', costing_options:{auto:{use_highways:v.hw, use_tolls:v.tolls, maneuver_penalty:v.mp, ...(v.paved ? {exclude_unpaved:true} : {}),
     ...(v.notoll || trip.noTolls ? {use_tolls:0, exclude_tolls:true} : {})}},
   directions_options:{units:'miles'}, ...(alternates ? {alternates} : {}),
@@ -1266,7 +1271,7 @@ function likedViaFor(from, to){
   });
   return best;
 }
-const tripKey = t => [t.from.lat, t.from.lon, t.to.lat, t.to.lon].map(x => (+x).toFixed(5)).join(',') + (t.noTolls ? '|notoll' : '') + '|' + (t.spots || []).map(x => x.id).join(',') + '|' + (t.likedVia ? t.likedVia.id : '') + '|' + (t.trusted ? t.trusted.id + '.' + t.trusted.fine : '') + ':' + likedRoads.length + '|' + (t.stops || []).map(st => ll([st.lat, st.lon])).join(';');
+const tripKey = t => [t.from.lat, t.from.lon, t.to.lat, t.to.lon].map(x => (+x).toFixed(5)).join(',') + (t.noTolls ? '|notoll' : '') + '|' + (t.spots || []).map(x => x.id).join(',') + '|' + (t.likedVia ? t.likedVia.id : '') + '|' + (t.trusted ? t.trusted.id + '.' + t.trusted.fine : '') + ':' + likedRoads.length + '|' + (t.stops || []).map(st => ll([st.lat, st.lon])).join(';') + '|' + (t.keepVia || []).map(ll).join(';');
 const sameRoute = (a, b) => Math.abs(a.summary.length - b.summary.length) < 0.05 && Math.abs(a.summary.time - b.summary.time) < 20;
 
 function computeTrip(trip){
@@ -1289,6 +1294,7 @@ function computeTrip(trip){
       if (kind === 'fastest' && !trip.noTolls && trips.some(t => t.summary.has_toll)) await attempt(byKind('notoll'));
       if (kind === 'fastest' && trip.likedVia && !(trip.stops || []).length) await attempt(byKind('liked'));
       if (kind === 'fastest' && trip.trusted && !(trip.stops || []).length) await attempt(byKind('trusted'));
+      if (kind === 'fastest' && trip.keepVia && (trip.stops || []).length) await attempt(byKind('kept'));
       job.progress.routesDone++;
       notify();
     }));
@@ -1298,7 +1304,7 @@ function computeTrip(trip){
     const fastest = found.reduce((a, b) => b.trip.summary.time < a.trip.summary.time ? b : a);
     const fewest = found.reduce((a, b) => b.route.turns < a.route.turns ? b : a, fastest);
     const must = found.filter(f => f !== fastest && (f.kind === 'paved' || (f.kind === 'notoll' && found.some(x => x.route.toll))
-      || (f === fewest && fastest.route.turns - f.route.turns >= 2) || (f.kind === 'liked' && f.route.likedMiles > 0) || f.kind === 'trusted'));   // the simplest route is always offered
+      || (f === fewest && fastest.route.turns - f.route.turns >= 2) || (f.kind === 'liked' && f.route.likedMiles > 0) || f.kind === 'trusted' || f.kind === 'kept'));   // the simplest route is always offered
     const rest = found.filter(f => f !== fastest && !must.includes(f)).sort((a, b) => stressOf(a.route) - stressOf(b.route));
     const keep = [fastest, ...must, ...rest].slice(0, MAX_ROUTES);
     found.splice(0, found.length, ...keep.sort((a, b) => a.order - b.order));
@@ -1369,7 +1375,7 @@ $('form').addEventListener('submit', async e => {
     await resolve('from'); await resolve('to');
     if (run !== state.runId) return;
     closeAllSuggestions();
-    const trip = {from: state.from, to: state.to, noTolls: profile.toll === 3, spots: avoidSpots.slice(), likedVia: likedViaFor(state.from, state.to), trusted: trustedVia(state.from, state.to), stops: state.stops.slice()};   // locked in for this search
+    const trip = {from: state.from, to: state.to, noTolls: profile.toll === 3, spots: avoidSpots.slice(), likedVia: likedViaFor(state.from, state.to), trusted: trustedVia(state.from, state.to), stops: state.stops.slice(), keepVia: state.stops.length ? state.keepVia : null};   // locked in for this search
     if (hav([trip.from.lat, trip.from.lon], [trip.to.lat, trip.to.lon]) < 0.05) throw new Error('The start and destination are the same place.');
     if (hav([trip.from.lat, trip.from.lon], [trip.to.lat, trip.to.lon]) > MAX_TRIP_MILES * 0.85) throw new Error(`That trip is too long for this prototype. It handles trips up to about ${MAX_TRIP_MILES} miles.`);
 
@@ -2611,7 +2617,11 @@ const stopLimit = limiter(STADIA ? 4 : 2);   // brand searches a few at a time: 
 const DRIVE_THRU = /mcdonald|wendy|burger king|taco bell|chick-fil-a|culver|arby|starbucks|biggby|dunkin|tim hortons/i;   // chains that reliably have a drive-thru
 const STOP_BAD = /\b(apartments?|school|church|parking|fire|police|station \d|department|car wash|headquarters|office|city of|county|township|village of|municipal|public works|dpw|fleet|streets?\s*(&|and)\s*equipment|garage|depot|yard|employees?|private|service center|maintenance|transit|airport)\b/i;   // government and fleet pumps aren't for the public
 const GENERIC_STOP = new Set(['Gas', 'Coffee']);   // a match on just the word, not a brand: listed for the driver to judge, never picked automatically
-const isBrand = (kind, name) => STOP_WORDS[kind].some(w => !GENERIC_STOP.has(w) && squash(name).includes(squash(w).replace(/s$/, '')));
+const FUEL_WORD = /\b(gas|fuel|station|food ?mart|mart|express|petro|truck stop)\b/i;
+const isBrand = (kind, name) => STOP_WORDS[kind].some(w => { if (GENERIC_STOP.has(w)) return false;
+  const b = squash(w).replace(/s$/, ''), n = squash(name);
+  return kind === 'gas' ? n.startsWith(b) || (n.includes(b) && FUEL_WORD.test(name)) : n.includes(b); });
+const GAS_BAD = /\b(shop|shoppe|gifts?|boutique|seashells?|souvenirs?|gallery|oil change|lube|car wash|tire)\b/i;   // not somewhere to fill up
 async function findStops(kind, quiet){
   const r = state.sel; if (!r) return;
   if (!quiet) $('stopList').innerHTML = '<p class="lede" style="margin:8px 0 0">Looking along your route…</p>';
@@ -2633,7 +2643,7 @@ async function findStops(kind, quiet){
   for (const f of (await Promise.all(jobs)).flat()){
     const it = toItem(f, null);
     if (!squash(it.main || '').includes(squash(f.word).replace(/s$/, ''))) continue;   // the name must really contain the brand (not "Jena King" for Burger King)
-    const k = norm(it.main) + it.lat.toFixed(3) + it.lon.toFixed(3); if (seen.has(k) || !it.main || STOP_BAD.test(it.main) || it.isRoad || it.isPlace) continue; seen.add(k);
+    const k = norm(it.main) + it.lat.toFixed(3) + it.lon.toFixed(3); if (seen.has(k) || !it.main || STOP_BAD.test(it.main) || (kind === 'gas' && GAS_BAD.test(it.main)) || it.isRoad || it.isPlace) continue; seen.add(k);
     const n = nearestOnShape(r.shape, [it.lat, it.lon]);
     if (n.d > 0.5 || r.cum[n.i] < 0.2 || r.total - r.cum[n.i] < 0.2) continue;          // not right at the start or the end
     // Which side of the road? Compare the route's direction there with the direction to the place.
@@ -2682,7 +2692,21 @@ const sideText = st => st.onHw ? 'off a highway exit' : st.atTurn ? 'at a turn' 
 const AUTO = {gas:'needGas', food:'needFood'};
 // One stop of each kind (gas, coffee, food), kept in driving order
 // One stop at a time: simpler for the driver, and the map apps follow one stop reliably
-function setStops(list){ state.stops = list.slice(-1); }
+function setStops(list){
+  state.stops = list.slice(-1);
+  // Keep the route the driver had: through the stop, the router stops offering alternatives, and the way you were
+  // shown (often one of those alternatives) would vanish. So ask for it again, through a few points along it.
+  if (!state.stops.length) state.keepVia = null;
+  else if (state.sel && state.sel.shape) state.keepVia = keepVia(state.sel, state.stops[0]);
+}
+// Points along route r, with the stop slotted in by where it falls along the route
+function keepVia(r, stop){
+  const at = alongD(r, [stop.lat, stop.lon]), pts = [];
+  [0.2, 0.4, 0.6, 0.8].forEach(f => { const i = r.cum.findIndex(c => c >= f * r.total); const d = r.cum[i];
+    if (i > 0 && Math.abs(d - at) > 0.5 && d > 0.3 && r.total - d > 0.3) pts.push({p:r.shape[i], d}); });
+  pts.push({p:[stop.lat, stop.lon], d:at});
+  return pts.sort((a, b) => a.d - b.d).map(x => [+x.p[0].toFixed(6), +x.p[1].toFixed(6)]);
+}
 let stopsCleared = false;   // a switch took the old stop away; the routes must be redone even if no new stop is found
 const hasKind = k => state.stops.some(st => st.kind === k);
 // "Need gas" / "Need food": after the routes come in, stop at the easiest place near the start of the chosen route.
@@ -2728,7 +2752,7 @@ async function autoStopsOnce(){
     // Drive the chosen route's own way (same road preferences) through each candidate, and compare with the route
     // as it stands. Keep the first that adds at most ~2 minutes and never doubles back.
     const t = state.trip, v = VARIANTS.find(x => x.kind === r.kind) || VARIANTS[0];
-    const drive = c => polite(() => valhalla(API.route, routeBody(v, {...t, stops:[c]}, 0, false)))
+    const drive = c => polite(() => valhalla(API.route, routeBody({...v, kept:true}, {...t, stops:[c], keepVia:keepVia(r, c)}, 0, false)))
       .then(j => ({mins:j.trip.summary.time / 60, shape:j.trip.legs.flatMap(l => decode(l.shape))}));
     for (const c of near){
       const d = await drive(c).catch(() => null);

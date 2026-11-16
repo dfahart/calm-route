@@ -1,3 +1,4 @@
+import json
 """Second batch of checks (the first file is near the 10-minute limit). Run: python3 test_more.py"""
 import sys, json, datetime
 sys.path.insert(0, '/home/claude/calm-route/test')
@@ -561,6 +562,29 @@ with sync_playwright() as p:
     ctx_page.click("#driveAsk [data-feel=fine]")
     check("and a drive can still be logged after that", ctx_page.evaluate("practice.drives") == 1 and not ctx_page.errors, ctx_page.errors)
     ctx_page.context.close()
+    # Florida testing: exact names first, seashell shops aren't gas, and adding a stop keeps the route you had
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    got = page.evaluate("stadiaPlaces('Tampa International Airport', null).then(r => r.items.map(i => i.main))")
+    check("a place named exactly what you typed comes first (the airport, not a fuel station named after it)", got and got[0] == "Tampa International Airport", got)
+    br = page.evaluate("""[isBrand('gas', "Kelly's Shell Shop"), isBrand('gas', 'Shell'), isBrand('gas', 'Meijer Gas Station'), isBrand('gas', 'Speedway'),
+        isBrand('gas', 'Joe\\'s Shell Food Mart'), GAS_BAD.test("Kelly's Shell Shop"), GAS_BAD.test('Shell')]""")
+    check("'Kelly's Shell Shop' is not a gas station; Shell, Meijer Gas, Speedway and a Shell food mart are", br == [False, True, True, True, True, True, False], br)
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    other = page.evaluate("state.routes.findIndex(r => r !== state.fast)")
+    page.evaluate(f"selectRoute({other})")
+    T.STOP_AT[0], T.STOP_AT[1] = page.evaluate("(() => { const s = state.sel.shape, c = state.sel.cum; return s[c.findIndex(x => x >= state.sel.total * 0.3)]; })()")
+    page.click("#stopBox [data-stop=gas]"); page.wait_for_selector("#stopList [data-addstop]", timeout=10000); page.click("#stopList [data-addstop]")
+    page.wait_for_function("state.trip && state.trip.stops.length && !$('app').classList.contains('busy') && state.routes.every(r => !r.pending)", timeout=30000)
+    kv = page.evaluate("state.trip.keepVia")
+    asked = any(len(c["locations"]) == len(kv) + 2 and c["costing_options"]["auto"]["maneuver_penalty"] == 12 for c in T.calls["sim"]) if kv else False
+    check("adding a stop asks the router for the route you had: points along it, with the stop in order", bool(kv) and len(kv) >= 2 and asked, [kv, asked])
+    order = page.evaluate("""(() => { const r = state.routes[0], kv = keepVia(r, state.trip.stops[0]), d = kv.map(p => alongD(r, p));
+        const body = routeBody(VARIANTS.find(v => v.kind === 'kept'), {...state.trip, keepVia:kv}, 0, false);
+        return [d.every((x, i) => i === 0 || x >= d[i - 1]), kv.some(p => p[0] === +state.trip.stops[0].lat.toFixed(6)), body.locations.length === kv.length + 2, body.locations.slice(1, -1).every(l => l.type === 'through')]; })()""")
+    check("the points are in driving order, include the stop, and are passed straight through", order == [True, True, True, True], order)
+    check("no errors in the Florida fixes", not page.errors, page.errors)
+    page.context.close()
+    T.STOP_AT[0] = T.STOP_AT[1] = 0
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];

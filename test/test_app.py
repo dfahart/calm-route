@@ -89,6 +89,9 @@ def stadia_special(q, path):
                pel("Shirley Court", 41.60, -72.70, "street", None, "Shirley Court", "Berlin", "Connecticut"),
                pel("8485 Shirley Court", 42.1953, -85.6168, "address", "8485", "Shirley Court", "Portage")]
     elif text in ("walmrt", "mcdonlads", "hosptial", "starbucks near grand rapids"): out = []
+    elif text == "tampa international airport":       # a fuel station named after the airport is listed first by the search
+        out = [pel("Clean Energy - Tampa International Airport", 27.96, -82.53, "venue", "5001", "North West Shore Boulevard", "Tampa"),
+               pel("Tampa International Airport", 27.98, -82.53, "venue", "4100", "George J. Bean Parkway", "Tampa")]
     elif text == "walmart gull road kalamazoo":      # a store name plus where: plain search gives the street, a venue search gives the stores
         out = ([pel("Walmart Supercenter", 42.1700, -85.6400, "venue", "8350", "Shaver Road", "Portage"), pel("Walmart Supercenter", 42.3167, -85.5306, "venue", "6065", "Gull Road", "Kalamazoo")]
                if q.get("layers") == ["venue"] else [pel("Gull Road", 42.3100, -85.5400, "street", None, "Gull Road", "Kalamazoo")])
