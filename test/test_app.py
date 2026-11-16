@@ -308,9 +308,9 @@ def install_routes(page):
             calls["signals"].append(url)
             if SIGNAL_FILE["body"] is None: return route.fulfill(status=404, body="not here")
             return route.fulfill(status=200, content_type="application/javascript", body=SIGNAL_FILE["body"])
-        if url.startswith("http://calm.test/css/") or url.startswith("http://calm.test/js/"):
+        if url.startswith("http://calm.test/css/") or url.startswith("http://calm.test/js/") or url.startswith("http://calm.test/fonts/"):
             rel = urllib.parse.urlparse(url).path.lstrip("/")
-            kind = "text/css" if rel.endswith(".css") else "application/javascript"
+            kind = "text/css" if rel.endswith(".css") else "font/woff2" if rel.endswith(".woff2") else "application/javascript"
             return route.fulfill(path=str(ROOT / rel), content_type=kind)
         if url.startswith("http://calm.test/"):
             # The test copy of Leaflet isn't byte-identical to cdnjs's, so its fingerprint check is taken off here
@@ -1648,9 +1648,13 @@ def run():
         check("nothing scrolls sideways on a small phone", page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
         other = page.locator("#routes .route[aria-checked=false]").first; other.scroll_into_view_if_needed(); before = page.evaluate("state.routes.indexOf(state.sel)"); other.tap()
         check("tapping a route card picks it", page.evaluate("state.routes.indexOf(state.sel)") != before)
-        page.locator("#map").scroll_into_view_if_needed()
-        pt = page.evaluate("""(() => { const r = state.routes.find(x => x !== state.sel); const p = r.shape[Math.floor(r.shape.length * 0.3)];
-              const c = map.latLngToContainerPoint(p); const m = document.getElementById('map').getBoundingClientRect(); return [m.left + c.x, m.top + c.y, state.routes.indexOf(r)]; })()""")
+        # the map fills the screen behind the planner sheet: slide the sheet down, then tap a part of a grey line it doesn't cover
+        page.evaluate("window.scrollTo(0, 0)"); page.wait_for_timeout(400)
+        pt = page.evaluate("""(() => { const top = document.querySelector('.panel').getBoundingClientRect().top - 10;
+              for (const r of state.routes.filter(x => x !== state.sel)) for (let i = 0; i < r.shape.length; i++){
+                const c = map.latLngToContainerPoint(r.shape[i]);
+                if (c.y > 60 && c.y < top && c.x > 20 && c.x < innerWidth - 70 && !state.sel.shape.some(q => map.latLngToContainerPoint(q).distanceTo(c) < 14)) return [c.x, c.y, state.routes.indexOf(r)]; }
+              return [0, 0, -1]; })()""")
         page.touchscreen.tap(pt[0], pt[1]); page.wait_for_timeout(300)
         check("tapping a grey line on the map picks that route", page.evaluate("state.routes.indexOf(state.sel)") == pt[2])
         sl = page.locator("#budget"); sl.scroll_into_view_if_needed(); bb = sl.bounding_box(); y = bb["y"] + bb["height"] / 2
@@ -1658,8 +1662,8 @@ def run():
         for i in range(1, 9): cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": bb["x"] + 4 + (bb["width"] - 8) * i / 8, "y": y}]})
         tp("touchEnd", [])
         check("the time slider can be dragged with a finger", page.input_value("#budget") == page.evaluate("$('budget').max"))
-        page.locator("#map").scroll_into_view_if_needed(); mb = page.locator("#map").bounding_box()
-        tp("touchStart", [(mb["x"] + mb["width"] / 2, mb["y"] + min(mb["height"], 400) / 2)]); page.wait_for_timeout(900); tp("touchEnd", [])
+        page.evaluate("window.scrollTo(0, 0)"); page.wait_for_timeout(400); top = page.evaluate("document.querySelector('.panel').getBoundingClientRect().top")
+        tp("touchStart", [(120, top / 2 + 20)]); page.wait_for_timeout(900); tp("touchEnd", [])
         page.wait_for_timeout(300)
         check("pressing and holding the map offers to avoid that spot", page.locator("[data-addspot]").count() == 1)
         check("pressing and holding the map doesn't select text", page.evaluate("getComputedStyle(document.getElementById('map')).userSelect") == "none")

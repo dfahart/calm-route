@@ -438,6 +438,21 @@ if (typeof L === 'undefined'){
 }
 const map = L.map('map', {zoomControl:false, tapHold:true}).setView([39.5, -96], 4);
 L.control.zoom({position:'topright'}).addTo(map);
+// The planner floats over the map (left on a computer, a sheet at the bottom on a phone), so the map credits sit
+// where the panel doesn't cover them, and every map move keeps its subject in the uncovered part.
+const PHONE = () => window.matchMedia('(max-width:860px)').matches;
+if (PHONE()) map.attributionControl.setPosition('topleft');
+function hidden(){   // pixels of the map hidden behind the panel: [left, bottom]
+  const p = document.querySelector('.panel'); if (!p) return [0, 0];
+  const r = p.getBoundingClientRect();
+  if (PHONE()) return [0, Math.max(0, Math.min(innerHeight * 0.7, innerHeight - (r.top + window.scrollY)))];   // where the sheet rests
+  return [Math.max(0, Math.min(innerWidth * 0.6, r.right)), 0];
+}
+function fitPad(px){ const [l, b] = hidden(); return {paddingTopLeft:[px + l, px], paddingBottomRight:[px, px + b]}; }
+function centerOn(ll, z){
+  map.setView(ll, z, {animate:false});
+  const [l, b] = hidden(); if (l || b) map.panBy([-l / 2, b / 2], {animate:false});
+}
 // Map background. With the Stadia key: Stadia's quiet light style, covered by the paid plan. Without it (demo only):
 // OpenStreetMap's own tiles, which are fine for a little testing but not for real users.
 const OSM_CREDIT = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>';
@@ -851,7 +866,7 @@ function showPreview(items, onPick){
     .on('click', () => onPick(i)).addTo(previewLayer));
   if (!$('app').classList.contains('has-results')){
     const b = L.latLngBounds(items.map(it => [it.lat, it.lon]));
-    map.fitBounds(b, {padding:[60, 60], maxZoom:14});
+    map.fitBounds(b, {...fitPad(60), maxZoom:14});
   }
 }
 function showEnds(move = true){
@@ -861,8 +876,8 @@ function showEnds(move = true){
   if (state.from && !state.from.here){ L.marker([state.from.lat, state.from.lon], {icon:pinIcon('A', 'start'), keyboard:false}).bindTooltip('Start: ' + esc(state.from.main)).addTo(endsLayer); pts.push([state.from.lat, state.from.lon]); }
   if (state.to){ L.marker([state.to.lat, state.to.lon], {icon:pinIcon('B', 'end'), keyboard:false}).bindTooltip('Destination: ' + esc(state.to.main)).addTo(endsLayer); pts.push([state.to.lat, state.to.lon]); }
   if (!move) return;
-  if (pts.length === 1) map.setView(pts[0], Math.max(map.getZoom(), 13));
-  if (pts.length === 2) map.fitBounds(L.latLngBounds(pts), {padding:[60, 60], maxZoom:13});
+  if (pts.length === 1) centerOn(pts[0], Math.max(map.getZoom(), 13));
+  if (pts.length === 2) map.fitBounds(L.latLngBounds(pts), {...fitPad(60), maxZoom:13});
 }
 
 const closers = [];
@@ -992,7 +1007,7 @@ $('here').onclick = () => {
     state.from = here; state.userLoc = here; $('from').value = 'My location'; tripChanged(); showEnds(); prefetch();
     // Computers often know your location only roughly; say so, because every distance and time starts from it
     setStatus(here.acc > LOOSE_FIX ? `Your location is only known to within about ${fixText(here.acc)}, so distances and times will be approximate. For exact numbers, type your starting address.` : '');
-    map.setView([here.lat, here.lon], 12);
+    centerOn([here.lat, here.lon], 12);
   }, () => setStatus('Location isn’t available (it may be blocked for this page). Type your starting address instead.', true), {timeout:10000, enableHighAccuracy:true, maximumAge:0});
 };
 $('swap').onclick = () => {
@@ -1408,7 +1423,7 @@ $('form').addEventListener('submit', async e => {
       setProgress(0.05 + 0.9 * pr.routesDone / pr.routesTotal);
       setStatus(`Comparing routes: ${pr.found.length} found so far…`);
       previewLayer.clearLayers(); drawPreview(pr.found);
-      if (pr.found.length && !job.fitted){ job.fitted = true; const b = L.latLngBounds([]); pr.found.forEach(f => b.extend(L.latLngBounds(decode(f.trip.legs[0].shape)))); map.fitBounds(b, {padding:[40, 40]}); }
+      if (pr.found.length && !job.fitted){ job.fitted = true; const b = L.latLngBounds([]); pr.found.forEach(f => b.extend(L.latLngBounds(decode(f.trip.legs[0].shape)))); map.fitBounds(b, fitPad(40)); }
     };
     job.subs.add(onProgress); onProgress(job.progress);
     let routes, deadline;
@@ -1837,9 +1852,9 @@ $('momentBox').addEventListener('click', e => {
   const b = e.target.closest('[data-e]'); if (!b || !state.sel) return;
   const ev = state.sel.events[+b.dataset.e]; if (!ev) return;
   // A zoom still animating from an earlier move would snap the map back when it ends, so wait for it
-  const go = () => map.setView(ev.ll, Math.max(map.getZoom(), 15), {animate:false});
+  const go = () => centerOn(ev.ll, Math.max(map.getZoom(), 15));
   if (map._animatingZoom) map.once('zoomend', go); else go();
-  if (window.matchMedia('(max-width:860px)').matches) $('map').scrollIntoView({block:'start'});
+  if (PHONE()) window.scrollTo({top:0});   // slide the sheet down so the map shows
 });
 $('budget').addEventListener('input', () => { state.manual = null; state.touched = true; update(false); });
 function selectRoute(i){
@@ -1868,11 +1883,11 @@ function draw(fit){
   shown.forEach(r => { if (r !== state.sel && r !== state.fast) L.polyline(r.shape, {color:'#9AAAB1', weight:4, opacity:.7}).addTo(layer); });
   if (state.fast !== state.sel) L.polyline(state.fast.shape, {color:'#5E717B', weight:4, opacity:.9, dashArray:'7 8'}).addTo(layer);   // the fastest, dashed, for comparison
   L.polyline(state.sel.shape, {color:'#fff', weight:10, opacity:1, interactive:false}).addTo(layer);
-  L.polyline(state.sel.shape, {color:'#2E6A8A', weight:6, opacity:1, interactive:false}).addTo(layer);
+  L.polyline(state.sel.shape, {color:'#0B6E69', weight:6, opacity:1, interactive:false}).addTo(layer);
   // Click or tap a grey line on the map to pick that route (a wide invisible line makes it easy to hit)
   state.routes.forEach((r, i) => {
     if (r === state.sel || !shown.includes(r)) return;
-    const hit = L.polyline(r.shape, {color:'#2E6A8A', weight:22, opacity:0, bubblingMouseEvents:false}).addTo(layer);
+    const hit = L.polyline(r.shape, {color:'#0B6E69', weight:22, opacity:0, bubblingMouseEvents:false}).addTo(layer);
     hit.bindTooltip(r === state.fast ? 'Fastest route: click to choose' : 'Click to choose this route', {sticky:true});
     hit.on('mouseover', () => hit.setStyle({opacity:.25})).on('mouseout', () => hit.setStyle({opacity:0}));
     hit.on('click', () => selectRoute(i));
@@ -1882,9 +1897,9 @@ function draw(fit){
     L.marker(e.ll, {icon, keyboard:false}).bindTooltip(esc(e.text))
       .bindPopup(`${esc(e.text)}<br><a href="${esc(streetView(state.sel, e))}" target="_blank" rel="noopener">See it in Street View</a>`).addTo(layer);
   });
-  L.circleMarker([state.trip.from.lat, state.trip.from.lon], {radius:7, color:'#1B2A31', weight:3, fillColor:'#fff', fillOpacity:1}).bindTooltip('Start').addTo(layer);
-  L.circleMarker([state.trip.to.lat, state.trip.to.lon], {radius:8, color:'#fff', weight:3, fillColor:'#2E6A8A', fillOpacity:1}).bindTooltip('Destination').addTo(layer);
-  if (fit){ const b = L.latLngBounds([]); state.routes.forEach(r => b.extend(L.latLngBounds(r.shape))); map.fitBounds(b, {padding:[40, 40]}); }
+  L.circleMarker([state.trip.from.lat, state.trip.from.lon], {radius:7, color:'#0B6E69', weight:3, fillColor:'#fff', fillOpacity:1}).bindTooltip('Start').addTo(layer);
+  L.marker([state.trip.to.lat, state.trip.to.lon], {icon:L.divIcon({className:'', html:'<div class="map-dest"></div>', iconSize:[26,20], iconAnchor:[13,10]}), keyboard:false}).bindTooltip('Destination').addTo(layer);
+  if (fit){ const b = L.latLngBounds([]); state.routes.forEach(r => b.extend(L.latLngBounds(r.shape))); map.fitBounds(b, fitPad(40)); }
 }
 
 // ================= hand-off: the fewest pinned points =================
@@ -2190,7 +2205,7 @@ function practicePick(budget){
   return {note:`No route on this trip is the right size of step for ${sk.long}, so this is the calmest one. Practice will be ready on another trip.`};
 }
 function stackSvg(level){
-  const fill = ['#5E717B', '#7FA88C', '#2E6A8A', '#C9B28A', '#9AAAB1'], dx = [0, 2, -2, 1.5, -1];
+  const fill = ['#5E717B', '#7FA88C', '#0B6E69', '#E8A25C', '#9AAAB1'], dx = [0, 2, -2, 1.5, -1];
   let out = '';
   for (let i = 0; i < 5; i++){
     const rx = 20 - i * 3.1, cy = 52 - i * 10.4, on = i < level;

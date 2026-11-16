@@ -7,6 +7,10 @@ why each decision was made) live in the spec doc, "Calm Route: Product Spec". Th
 
 - **No build step and no framework.** Three files make the app: `calm-route.html` (layout and security
   policy), `css/calm-route.css` and `js/calm-route.js`. Edit them and reload.
+- **The look:** the map fills the window and the planner floats over it on a frosted panel (a card on the left on a
+  computer, a sheet that slides up on a phone). Map moves go through `fitPad()` / `centerOn()` so nothing lands
+  under the panel. Our own identity, not Apple's: Figtree type (never Apple's SF fonts, which are licensed for
+  Apple-platform mockups only), teal for the calm route, apricot pebbles, our own icons and words.
 - **One plain script.** `js/calm-route.js` runs top to bottom with shared globals, most importantly one
   `state` object (current trip, routes, selected route, stop). Sections are marked
   `// ================= name =================`, and the table of contents at the top lists them.

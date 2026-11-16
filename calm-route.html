@@ -4,13 +4,12 @@
 <meta charset="utf-8">
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- Security: only this page's own script and the services listed here may run or be contacted. tools/csp.py stamps the script hash. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: https://cdnjs.cloudflare.com; style-src 'self' file: 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tiles.stadiamaps.com https://tile.openstreetmap.org https://cdnjs.cloudflare.com; connect-src https://api.stadiamaps.com https://valhalla1.openstreetmap.de https://photon.komoot.io https://api.weather.gov https://www.fueleconomy.gov; base-uri 'none'; form-action 'none'; object-src 'none'">
+<!-- Security: only this page's own files and the services listed here may run or be contacted. The font (Figtree) is served from fonts/ in this repo. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: https://cdnjs.cloudflare.com; style-src 'self' file: 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' file:; img-src 'self' data: blob: https://tiles.stadiamaps.com https://tile.openstreetmap.org https://cdnjs.cloudflare.com; connect-src https://api.stadiamaps.com https://valhalla1.openstreetmap.de https://photon.komoot.io https://api.weather.gov https://www.fueleconomy.gov; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Calm Route</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#F2F4F2">
+<link rel="preload" href="fonts/figtree-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha384-c6Rcwz4e4CITMbu/NBmnNS8yN2sC3cUElMEMfP3vqqKFp7GOYaaBBCqmaWBjmkjb" crossorigin="anonymous">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" integrity="sha384-NElt3Op+9NBMCYaef5HxeJmU4Xeard/Lku8ek6hoPTvYkQPh3zLIrJP7KiRocsxO" crossorigin="anonymous"></script>
 <link rel="stylesheet" href="css/calm-route.css">
@@ -21,9 +20,9 @@
     <div class="scroll">
       <header class="brand">
         <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
-          <rect width="40" height="40" rx="12" fill="#2E6A8A"/>
+          <rect width="40" height="40" rx="12" fill="#0B6E69"/>
           <path d="M9 29c5-1 6-7 11-8s6-7 11-8" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
-          <path d="M9 29c5-1 6-7 11-8s6-7 11-8" fill="none" stroke="#2E6A8A" stroke-width="1" stroke-dasharray="2 3" stroke-linecap="round"/>
+          <path d="M9 29c5-1 6-7 11-8s6-7 11-8" fill="none" stroke="#0B6E69" stroke-width="1" stroke-dasharray="2 3" stroke-linecap="round"/>
         </svg>
         <div>
           <h1>Calm Route</h1>
@@ -41,7 +40,7 @@
 
       <details class="pebbles" id="pebbleCard">
         <summary>
-          <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><ellipse cx="15" cy="22" rx="12" ry="5" fill="#5E717B"/><ellipse cx="16" cy="14" rx="8.5" ry="4.2" fill="#7FA88C"/><ellipse cx="14.5" cy="7.5" rx="5.5" ry="3.2" fill="#2E6A8A"/></svg>
+          <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><ellipse cx="15" cy="22" rx="12" ry="5" fill="#5E717B"/><ellipse cx="16" cy="14" rx="8.5" ry="4.2" fill="#7FA88C"/><ellipse cx="14.5" cy="7.5" rx="5.5" ry="3.2" fill="#E8A25C"/></svg>
           <span><span class="who" id="pebbleCount"></span><span class="what" id="pebbleSub"></span></span>
           <span class="edit" id="pebbleState"></span>
         </summary>

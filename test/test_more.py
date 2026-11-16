@@ -248,7 +248,7 @@ with sync_playwright() as p:
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     check("the profile keeps keyboard focus inside and Escape closes it, returning focus", all(inside) and page.evaluate("document.activeElement.id") == "editProfile")
     ring = page.evaluate("(() => { $('from').focus(); return getComputedStyle($('from')).boxShadow; })()")
-    check("the focus ring on the address boxes is a solid dark colour", "rgb(46, 106, 138)" in ring, ring)
+    check("the focus ring on the address boxes is a solid dark colour", "rgb(11, 110, 105)" in ring, ring)
     page.context.close()
     page = T.new_page(b, profile={}, width=320, height=640, mobile=True, query=f"?stadiaKey={T.STADIA_KEY}"); trip(page)
     check("at 320 px wide (the accessibility reflow width) nothing scrolls sideways", page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
@@ -742,6 +742,32 @@ with sync_playwright() as p:
     page.wait_for_function("state.trip && state.trip.stops.length && !$('app').classList.contains('busy')", timeout=30000)
     check("the same station with no detour is picked", page.evaluate("state.trip.stops[0].main") == "Speedway")
     check("no errors with the detour check", not page.errors, page.errors)
+    page.context.close()
+
+    # The look: a full-screen map with the planner on a frosted panel; our own font, nothing from Google Fonts
+    fonts = []
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}", csp=True)
+    page.on("request", lambda r: fonts.append(r.url) if "font" in r.url else None)
+    page.reload(); page.wait_for_timeout(1500)
+    check("the font is Figtree, served from the app's own folder", page.evaluate("document.fonts.check('16px Figtree')") and all("calm.test/fonts/" in u for u in fonts) and fonts, fonts)
+    check("the map fills the window behind the planner", page.evaluate("(() => { const m = $('map').getBoundingClientRect(); return m.width === innerWidth && m.height === innerHeight; })()"))
+    check("the planner floats on a frosted panel", "blur" in page.evaluate("getComputedStyle(document.querySelector('.panel')).backdropFilter || getComputedStyle(document.querySelector('.panel')).webkitBackdropFilter"))
+    page.context.close()
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    out = page.evaluate("""(() => { const right = document.querySelector('.panel').getBoundingClientRect().right;
+        return state.routes.every(r => r.shape.every(p => map.latLngToContainerPoint(p).x > right)); })()""")
+    check("on a computer, the routes are drawn beside the panel, not under it", out is True, out)
+    check("the destination is marked with a pebble", page.locator(".map-dest").count() == 1)
+    page.context.close()
+    page = T.new_page(b, profile={}, width=390, height=844, mobile=True, query=f"?stadiaKey={T.STADIA_KEY}")
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    page.wait_for_timeout(1200); page.evaluate("window.scrollTo(0, 0)"); page.wait_for_timeout(300); page.evaluate("draw(true)")   # after the smooth scroll to the results
+    out = page.evaluate("""(() => { const top = document.querySelector('.panel').getBoundingClientRect().top;
+        return [top, Math.max(...state.routes.flatMap(r => r.shape.map(p => map.latLngToContainerPoint(p).y)))]; })()""")
+    check("on a phone, the planner is a sheet part-way down and the routes are drawn above it", out[0] > 300 and out[1] < out[0], out)
+    check("on a phone, the map credits stay visible above the sheet", page.evaluate("document.querySelector('.leaflet-control-attribution').getBoundingClientRect().bottom < document.querySelector('.panel').getBoundingClientRect().top"))
+    check("no errors with the new look", not page.errors, page.errors)
     page.context.close()
     b.close()
 failed = [n for n, ok in results if not ok]

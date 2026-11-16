@@ -15,6 +15,7 @@ If you're a developer picking this up, start with [DEVELOPING.md](DEVELOPING.md)
 | --- | --- |
 | `calm-route.html` | The page: layout and the security policy. |
 | `css/calm-route.css` | All the styling. |
+| `fonts/` | Figtree, the app's typeface (SIL Open Font License, see `Figtree-OFL.txt`), served from here so no font service sees visitors. |
 | `js/calm-route.js` | All the app's logic, in labelled sections (a table of contents is at the top). |
 | `index.html` | Sends visitors from the site's front door to `calm-route.html`. |
 | `signals/US-MI.js` | Michigan traffic lights (35,481), so the app can tell lefts with a light from lefts without one. |
