@@ -569,6 +569,7 @@ with sync_playwright() as p:
     br = page.evaluate("""[isBrand('gas', "Kelly's Shell Shop"), isBrand('gas', 'Shell'), isBrand('gas', 'Meijer Gas Station'), isBrand('gas', 'Speedway'),
         isBrand('gas', 'Joe\\'s Shell Food Mart'), GAS_BAD.test("Kelly's Shell Shop"), GAS_BAD.test('Shell')]""")
     check("'Kelly's Shell Shop' is not a gas station; Shell, Meijer Gas, Speedway and a Shell food mart are", br == [False, True, True, True, True, True, False], br)
+    check("nor are 'Kelly's Shell Shack' or 'The Conch Shell'", page.evaluate("[isBrand('gas', \"Kelly's Shell Shack\"), isBrand('gas', 'The Conch Shell')]") == [False, False])
     trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
     other = page.evaluate("state.routes.findIndex(r => r !== state.fast)")
     page.evaluate(f"selectRoute({other})")

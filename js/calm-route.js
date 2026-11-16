@@ -2671,7 +2671,7 @@ async function findStops(kind, quiet){
   const seen = new Set(), out = [];
   for (const f of (await Promise.all(jobs)).flat()){
     const it = toItem(f, null);
-    if (!nameFits(f.word, it.main)) continue;   // the name must really contain the brand (not "Jena King" for Burger King)
+    if (!nameFits(f.word, it.main) || (kind === 'gas' && !isBrand('gas', it.main))) continue;   // gas: the chain's name leads, or comes with a fuel word (not "The Conch Shell")   // the name must really contain the brand (not "Jena King" for Burger King)
     const k = norm(it.main) + it.lat.toFixed(3) + it.lon.toFixed(3); if (seen.has(k) || !it.main || STOP_BAD.test(it.main) || (kind === 'gas' && GAS_BAD.test(it.main)) || it.isRoad || it.isPlace) continue; seen.add(k);
     const n = nearestOnShape(r.shape, [it.lat, it.lon]);
     if (n.d > 0.5 || r.cum[n.i] < 0.2 || r.total - r.cum[n.i] < 0.2) continue;          // not right at the start or the end
