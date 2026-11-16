@@ -401,6 +401,25 @@ const state = {from:null, to:null, routes:[], fast:null, sel:null, manual:null, 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtDur(min){ min = Math.round(min); if (min < 60) return `${min} min`; const h = Math.floor(min/60), m = min%60; return m ? `${h} h ${m} min` : `${h} h`; }
+const DEVICE_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch(e){ return ''; } })();
+// Arrival time: in the destination's own time zone when that's different from this phone's ("3:52 PM CST (4:52 PM your time)")
+function fmtArrive(minFromNow){
+  const tz = state.trip && state.trip.toTz, here = fmtClock(minFromNow);
+  if (!tz || tz === DEVICE_TZ) return here;
+  try {
+    const d = new Date(Date.now() + minFromNow * 60000), opts = {hour:'numeric', minute:'2-digit', timeZone:tz};
+    if (d.toLocaleTimeString([], opts) === here) return here;             // a different name for the same clock time
+    return `${d.toLocaleTimeString([], {...opts, timeZoneName:'short'})} (${here} your time)`;
+  } catch(e){ return here; }
+}
+// The destination's time zone, from the National Weather Service (US only; elsewhere arrival stays in your time)
+const tzCache = new Map();
+async function destZone(trip){
+  const k = trip.to.lat.toFixed(2) + ',' + trip.to.lon.toFixed(2);
+  if (!tzCache.has(k)) tzCache.set(k, wxJSON(`https://api.weather.gov/points/${trip.to.lat.toFixed(4)},${trip.to.lon.toFixed(4)}`).then(j => j.properties.timeZone || null).catch(() => null));
+  const tz = await tzCache.get(k);
+  if (tz && state.trip === trip && trip.toTz !== tz){ trip.toTz = tz; update(false, true); }
+}
 function fmtClock(minFromNow){ return new Date(Date.now() + minFromNow*60000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
 function plural(n, one, many){ return `${n} ${n===1 ? one : (many || one+'s')}`; }
 function hav(a, b){
@@ -1402,6 +1421,7 @@ $('form').addEventListener('submit', async e => {
     state.lastArea = {lat:trip.from.lat, lon:trip.from.lon, label:trip.from.here ? 'you' : trip.from.main};
     try { localStorage.setItem('calmRouteArea', JSON.stringify(state.lastArea)); } catch(e){}
     state.routes = routes; state.manual = null;
+    destZone(trip);
     // A stop picked on a route other than the calm pick: stay on that route (now through the stop); the calm pick stays as the other card
     if ((trip.stops || []).length && state.keepFrom === 'other') state.manual = routes.find(r => r.kind === 'kept') || null;
     rememberTrip(trip);
@@ -1444,15 +1464,15 @@ function defaultBudget(){
   const want = calmestExtra <= reasonable ? calmestExtra : mustHave ? keepsRules : Math.max(10, state.fast.mins * 0.3);
   s.value = Math.min(+s.max, Math.ceil(want / 5) * 5);
 }
-function arrivalText(r){ return (r === state.fast ? '' : (r.extra < 1 ? 'about the same · ' : '+' + fmtDur(Math.max(1, r.extra)) + ' · ')) + 'arrive ' + fmtClock(r.mins); }
+function arrivalText(r){ return (r === state.fast ? '' : (r.extra < 1 ? 'about the same · ' : '+' + fmtDur(Math.max(1, r.extra)) + ' · ')) + 'arrive ' + fmtArrive(r.mins); }
 function budgetHintText(budget){
   // When the quickest route is also the calmest, there's nothing to trade: say so instead of "you'll take the fastest"
   if (calmestOf(state.routes) === state.fast){
     const nightBit = state.routes.some(r => r !== state.fast && nightCost(r, weights()) > 0.5) ? ' Right now the other routes use dark country roads.' : '';
-    return `Good news: the fastest route is also the calmest for you, so there’s no time to trade. You’ll arrive about ${fmtClock(state.fast.mins)}.${nightBit}`;
+    return `Good news: the fastest route is also the calmest for you, so there’s no time to trade. You’ll arrive about ${fmtArrive(state.fast.mins)}.${nightBit}`;
   }
-  if (budget === 0) return `You’ll take the fastest route and arrive about ${fmtClock(state.fast.mins)}. Slide right to trade a few minutes for a calmer route.`;
-  const base = `Fastest arrival about ${fmtClock(state.fast.mins)}. With this much extra time, you’d arrive by about ${fmtClock(state.fast.mins + budget)}.`;
+  if (budget === 0) return `You’ll take the fastest route and arrive about ${fmtArrive(state.fast.mins)}. Slide right to trade a few minutes for a calmer route.`;
+  const base = `Fastest arrival about ${fmtArrive(state.fast.mins)}. With this much extra time, you’d arrive by about ${fmtArrive(state.fast.mins + budget)}.`;
   // Say why moving the slider changes nothing, instead of leaving the driver guessing
   if (calmestWithin(budget) !== state.fast) return base;
   const overall = calmestOf(state.routes);
@@ -2011,7 +2031,11 @@ function drawPins(pins){
 // ================= open in a navigation app =================
 // Google Maps and Apple Maps links can carry pinned points, so they follow the calm route.
 // Waze links can only carry a destination, so Waze picks its own way there.
-const APPS = {google:'Google Maps', apple:'Apple Maps', waze:'Waze'};
+// Waze is hidden: it can't take pinned points or stops, so it never follows the calm route. The code stays;
+// window.CALM_FLAGS = {waze:true} before the app loads brings it back.
+const SHOW_WAZE = !!(window.CALM_FLAGS && window.CALM_FLAGS.waze);
+const APPS = SHOW_WAZE ? {google:'Google Maps', apple:'Apple Maps', waze:'Waze'} : {google:'Google Maps', apple:'Apple Maps'};
+if (!SHOW_WAZE){ const o = document.querySelector('#navApp option[value=waze]'); if (o) o.remove(); }
 const isApple = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 let navApp = isApple ? 'apple' : 'google';
 try { const saved = localStorage.getItem('calmRouteNavApp'); if (APPS[saved]) navApp = saved; } catch(e){}
@@ -2097,7 +2121,7 @@ function renderHandoff(pins, app){
   box.hidden = false;
   box.innerHTML = `<p>${esc(app)} will show ${only ? 'one stop' : `${pins.length} stops`} before your destination${passes ? `. ${passes === pins.length ? (only ? 'It’s a' : 'They’re') : `${passes === 1 ? 'One is a' : `${passes} are`}`} pass-through point${passes === 1 ? '' : 's'} that keep${passes === 1 ? 's' : ''} it on this route: <b>don’t stop, just keep driving</b>` : ''}.</p>
     <ol>${items.map(t => `<li>${t}</li>`).join('')}</ol>
-    <p>It may say “arriving” at each one and show the time to that point. Your real arrival is about <b>${fmtClock(r.mins)}</b>.</p>
+    <p>It may say “arriving” at each one and show the time to that point. Your real arrival is about <b>${fmtArrive(r.mins)}</b>.</p>
     <p class="lede">Come back after your drive to collect your pebble.</p>`;
 }
 $('copy').onclick = async () => {
@@ -2885,7 +2909,7 @@ function renderStop(){
   $('stopLabel').innerHTML = !list.length ? 'Need a stop on the way?'
     : list.map((st, i) => `<span class="stopline">${stopKind(st)}: <b>${esc(st.main)}</b>${st.right != null ? ` <span class="lede">(${sideText(st)}, ${(+st.at).toFixed(1)} mi in${st.pickedOn ? ` on ${st.pickedOn}` : ''})</span>` : ''} <button type="button" class="ghost stopRemove" data-remove="${i}" aria-label="Remove the ${stopKind(st).toLowerCase()} stop at ${esc(st.main)}">Remove</button></span>`).join('');
   $('stopBox').querySelectorAll('[data-stop]').forEach(b => { b.textContent = STOP_NAMES[b.dataset.stop] + (hasKind(b.dataset.stop) ? ' (change)' : ''); });
-  if (list.length) $('stopList').innerHTML = `<p class="lede" style="margin:6px 0 0">The routes below all go through this stop, and it’s added as a stop in Google and Apple Maps (Waze gets the destination only). To pick a stop on a different route, choose that route first, then add the stop again.</p>`;
+  if (list.length) $('stopList').innerHTML = `<p class="lede" style="margin:6px 0 0">The routes below all go through this stop, and it’s added as a stop in Google and Apple Maps. To pick a stop on a different route, choose that route first, then add the stop again.</p>`;
 }
 $('stopBox').addEventListener('click', e => {
   const k = e.target.closest('[data-stop]'); if (k){ findStops(k.dataset.stop); return; }

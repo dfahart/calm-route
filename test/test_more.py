@@ -3,6 +3,7 @@ import json
 import sys, json, datetime
 sys.path.insert(0, '/home/claude/calm-route/test')
 import test_app as T
+T.WAZE_ON = False   # this batch tests the app as people get it: no Waze
 from playwright.sync_api import sync_playwright
 results = []
 def check(name, ok, detail=None):
@@ -23,7 +24,7 @@ def fake_weather(page, kind):
     def h(route):
         u = route.request.url; page.calls_wx.append(u)
         if kind == "down": return route.abort("internetdisconnected")
-        if "/points/" in u: return route.fulfill(status=200, content_type="application/json", body=json.dumps({"properties": {"forecastHourly": "https://api.weather.gov/gridpoints/GRR/45,12/forecast/hourly"}}))
+        if "/points/" in u: return route.fulfill(status=200, content_type="application/json", body=json.dumps({"properties": {"forecastHourly": "https://api.weather.gov/gridpoints/GRR/45,12/forecast/hourly", "timeZone": getattr(page, "tz", "America/Detroit")}}))
         if "/forecast/hourly" in u: return route.fulfill(status=200, content_type="application/json", body=json.dumps({"properties": {"periods": periods()}}))
         if "/alerts/active" in u:
             feats = [{"properties": {"event": "Winter Weather Advisory", "status": "Actual", "ends": (now + datetime.timedelta(hours=6)).isoformat()}},
@@ -688,6 +689,21 @@ with sync_playwright() as p:
     check("no errors with the stop on your chosen route", not page.errors, page.errors)
     page.context.close()
     T.STOP_AT[0] = T.STOP_AT[1] = 0
+    # Arrival in the destination's time zone; Waze hidden
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    page.tz = "America/Chicago"; fake_weather(page, "fine")
+    trip(page); page.wait_for_function("state.trip && state.trip.toTz === 'America/Chicago'", timeout=20000); page.wait_for_timeout(300)
+    txt = page.text_content("#routes")
+    check("a destination in another time zone shows its local arrival time, and yours", "CST" in txt and "your time" in txt, txt[:200])
+    same = page.evaluate("(() => { const was = state.trip.toTz; state.trip.toTz = 'America/New_York'; const ok = fmtArrive(10) === fmtClock(10); state.trip.toTz = was; return ok; })()")
+    check("the same clock time under another zone name shows just the time", same is True)
+    opts = page.evaluate("[...document.querySelectorAll('#navApp option')].map(o => o.value)")
+    check("Waze isn't offered (it can't follow the calm route)", opts == ["google", "apple"] and "Waze" not in page.text_content("#alsoOpen"), [opts, page.text_content("#alsoOpen")])
+    page.context.close()
+    page = T.new_page(b, profile={}, init_script="localStorage.setItem('calmRouteNavApp', 'waze');")
+    check("someone who had chosen Waze is moved to Google Maps", page.evaluate("navApp") == "google" and page.input_value("#navApp") == "google")
+    check("no errors with time zones and the app list", not page.errors, page.errors)
+    page.context.close()
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];

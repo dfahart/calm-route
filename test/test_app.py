@@ -405,6 +405,7 @@ def check(name, cond, detail=""):
     results.append((name, bool(cond), detail))
     print(("PASS " if cond else "FAIL ") + name + (f"  [{detail}]" if detail and not cond else ""))
 
+WAZE_ON = True
 def new_page(browser, profile=None, width=1280, height=820, init_script=None, mobile=False, query=None, csp=False, open_sections=True):
     # Playwright's own waiting helpers need eval, which the page's security policy forbids, so most tests run with the
     # policy off; the security tests turn it on (csp=True) and wait without those helpers.
@@ -419,6 +420,8 @@ def new_page(browser, profile=None, width=1280, height=820, init_script=None, mo
     page.on("dialog", lambda d: (page.dialogs.append(d.message), d.dismiss()))
     install_routes(page)
     if init_script: page.add_init_script(init_script)
+    if WAZE_ON:   # Waze is hidden in the app; the older Waze tests switch it back on (test_more runs with it off)
+        page.add_init_script("window.CALM_FLAGS = Object.assign({waze:true}, window.CALM_FLAGS || {});")
     if open_sections:   # most tests reach into the profile's optional sections, which real users open with a tap
         page.add_init_script("""new MutationObserver(() => { const s = document.getElementById('sheet');
             if (s && s.classList.contains('open')) s.querySelectorAll('details:not([open])').forEach(d => d.open = true); })
