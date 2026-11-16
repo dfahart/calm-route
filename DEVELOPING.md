@@ -41,9 +41,16 @@ station that means doubling back.
 cd test
 npm install            # test-only copies of Leaflet and the axe accessibility checker
 pip install playwright && playwright install chromium
-python3 test_app.py    # about 400 checks, about 10 minutes
-python3 test_more.py   # about 120 checks, about 9 minutes
+python3 run_fast.py           # everything (about 610 checks), 4 sections at a time: about 2.5 minutes
+python3 run_fast.py pebble    # only sections whose heading mentions a word: seconds
+python3 test_app.py           # the same checks the slow way, one file at a time (about 10 minutes each)
+python3 test_more.py
 ```
+
+While working, run just the sections you touched (`run_fast.py <word>`); run everything once before going live.
+`run_fast.py` splits each file at its section headings (a section that reuses the page before it stays joined to
+it). A section that fails while sharing the machine is retried once on its own; if it then passes, it is reported
+as timing-sensitive rather than failing the run.
 
 Each prints `PASS` or `FAIL` per check and a total. Both must be all-pass before anything goes live.
 
