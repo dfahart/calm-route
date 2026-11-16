@@ -1999,6 +1999,26 @@ function setLink(){
   if (followsRoute) notes.push(`${app} may show a slightly different distance and time: it ${state.trip.from.here ? 'uses its own fix on your location, ' : ''}routes to the building’s entrance and counts live traffic.`);
   $('detailNote').textContent = [state.routes.some(r => !r.detailed && !r.pending) ? 'Detailed road data was unavailable for some routes, so their counts are estimates.' : '', ...notes].filter(Boolean).join(' ');
   $('detailNote').classList.toggle('warn', followsRoute && (info.state === 'partial' || info.state === 'unchecked'));
+  renderHandoff(followsRoute && info.state !== 'checking' ? pins : [], app);
+}
+// The road a point on the route sits on, from the route's own turn list
+function roadAt(r, p){
+  const i = nearestOnShape(r.shape, p).i; let name = '';
+  for (const st of r.streets || []){ if (st.i > i) break; if (st.name) name = st.name; }
+  return name;
+}
+// Before the hand-off, say what the map app is about to show: each pinned point is a "stop" there, named after
+// whatever address is nearest, and the time on screen is to the next point, not to the destination.
+function renderHandoff(pins, app){
+  const box = $('handoffNote'), r = state.sel;
+  if (!pins.length || !r){ box.hidden = true; box.innerHTML = ''; return; }
+  const items = pins.map(p => p.stop ? `<b>${esc(p.stop.main)}</b>, your ${stopKind(p.stop).toLowerCase()} stop` : (n => n ? `on <b>${esc(n)}</b>` : 'a point on your route')(roadAt(r, p)));
+  const passes = pins.filter(p => !p.stop).length, only = pins.length === 1;
+  box.hidden = false;
+  box.innerHTML = `<p>${esc(app)} will show ${only ? 'one stop' : `${pins.length} stops`} before your destination${passes ? `. ${passes === pins.length ? (only ? 'It’s a' : 'They’re') : `${passes === 1 ? 'One is a' : `${passes} are`}`} pass-through point${passes === 1 ? '' : 's'} that keep${passes === 1 ? 's' : ''} it on this route: <b>don’t stop, just keep driving</b>` : ''}.</p>
+    <ol>${items.map(t => `<li>${t}</li>`).join('')}</ol>
+    <p>It may say “arriving” at each one and show the time to that point. Your real arrival is about <b>${fmtClock(r.mins)}</b>.</p>
+    <p class="lede">Come back after your drive to collect your pebble.</p>`;
 }
 $('copy').onclick = async () => {
   try { await navigator.clipboard.writeText($('gmaps').href); $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = 'Copy link', 1600); }

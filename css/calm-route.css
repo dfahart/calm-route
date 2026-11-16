@@ -189,6 +189,12 @@ input[type=range]{width:100%;accent-color:var(--lake);height:28px;margin:0}
 .key .k-ev{width:14px;height:14px;border-radius:50%;background:var(--paper);border:2px solid var(--ink);font-style:normal;font-size:9px;font-weight:700;display:inline-grid;place-items:center}
 
 .note{font-size:14px;color:var(--sub);margin:12px 2px 0}
+/* what the map app will show after the hand-off: pass-through points by road name, and the real arrival time */
+.handoff{margin:14px 0 0;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:12px;font-size:15px;line-height:1.45}
+.handoff p{margin:0}
+.handoff p + p{margin-top:6px}
+.handoff ol{margin:6px 0 6px 1.3em;padding:0}
+.handoff .lede{font-size:14px}
 .note.warn{color:#7A5418}
 
 /* saved places */

@@ -458,6 +458,20 @@ with sync_playwright() as p:
     T.FOOD_NAME["name"] = "Wendy's"; T.FOOD_AT[0] = T.FOOD_AT[1] = 0
     check("no errors with the search and drive-thru fixes", not page.errors, page.errors)
     page.context.close()
+    # Before the hand-off: what the map app will show (pass-through points by road name) and the real arrival time
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    calm = page.evaluate("state.routes.findIndex(r => r !== state.fast)")
+    if calm >= 0: page.evaluate(f"selectRoute({calm})")
+    page.wait_for_function("state.sel.pinPlan && state.sel.pinPlan.done", timeout=30000); page.wait_for_timeout(300)
+    n = page.evaluate("pinInfo().pins.length"); txt = page.text_content("#handoffNote") if n else ""
+    check("with pinned points, a box says how many stops the map app will show and not to stop at them", n >= 1 and page.is_visible("#handoffNote") and "keep driving" in txt and page.locator("#handoffNote li").count() == n, [n, txt[:160]])
+    check("each pass-through point is named by its road", n >= 1 and all("on " in x for x in page.locator("#handoffNote li").all_inner_texts()), page.locator("#handoffNote li").all_inner_texts())
+    check("it gives the real arrival time and invites the driver back for a pebble", "real arrival is about" in txt and "pebble" in txt and page.evaluate("fmtClock(state.sel.mins)") in txt, txt[-160:])
+    page.evaluate("selectRoute(state.routes.indexOf(state.fast))"); page.wait_for_timeout(300)
+    check("with no pinned points the box is hidden", page.evaluate("pinInfo().pins.length") > 0 or not page.is_visible("#handoffNote"))
+    check("no errors with the hand-off box", not page.errors, page.errors)
+    page.context.close()
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];
