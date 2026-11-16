@@ -330,8 +330,8 @@ with sync_playwright() as p:
     check("no errors with Need gas", not page.errors, page.errors)
     page.context.close()
     T.LEFT_AT[0] = T.LEFT_AT[1] = 0
-    # One stop at a time: Need gas and Need food are either/or
-    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    # One stop at a time: Need gas and Need food are either/or (with the Need food switch turned back on)
+    page = T.new_page(b, init_script="window.CALM_FLAGS = {foodSwitch:true};", profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
     trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
     pts = page.evaluate("""(() => { const s = state.sel.shape, c = state.sel.cum, at = mi => s[c.findIndex(x => x >= mi)]; return {a:at(1.0), far:at(2.2)}; })()""")
     T.STOP_AT[0], T.STOP_AT[1] = pts["a"]; T.FOOD_AT[0], T.FOOD_AT[1] = pts["far"]
@@ -461,7 +461,7 @@ with sync_playwright() as p:
     check("picking a start moves straight on to the destination box", page.evaluate("document.activeElement.id") == "to")
     page.context.close()
     # A store name plus a street finds the store, not the street; Need food only picks true drive-thrus
-    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    page = T.new_page(b, init_script="window.CALM_FLAGS = {foodSwitch:true};", profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
     got = page.evaluate("stadiaPlaces('Walmart Gull Road Kalamazoo', {lat:42.2, lon:-85.6}).then(r => r.items.map(i => i.main + ' | ' + i.sub))")
     check("'Walmart Gull Road Kalamazoo' finds the Walmart on Gull Road, not the road or another Walmart", len(got) == 1 and got[0].startswith("Walmart Supercenter") and "Gull Road" in got[0], got)
     trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
@@ -659,6 +659,35 @@ with sync_playwright() as p:
     check("a brand-new driver doesn't see avoided spots, liked roads or data controls yet", not page.is_visible("#spotBox") and not page.is_visible("#likedBox") and not page.is_visible("#dataBox"))
     check("your car is in the profile, not on the results", page.locator("#sheet #fuelBox").count() == 1)
     page.context.close()
+    # One automatic switch (Need gas); a stop belongs to the route you chose, and both cards stay in Simple view
+    page = T.new_page(b, profile={"view":"simple"}, query=f"?stadiaKey={T.STADIA_KEY}")
+    check("there's one automatic switch, Need gas; food and coffee are picked from the list", page.locator("#needGas").count() == 1 and page.locator("#needFood").count() == 0
+          and page.locator("#stopBox [data-stop=food]").count() == 1 and page.locator("#stopBox [data-stop=coffee]").count() == 1)
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    two = page.evaluate("state.rec !== state.fast")
+    T.STOP_AT[0], T.STOP_AT[1] = page.evaluate("(() => { const s = state.fast.shape, c = state.fast.cum; return s[c.findIndex(x => x >= 1.0)]; })()")
+    if two:
+        page.click("#routes .route.isfast")
+    page.check("#needGas")
+    page.wait_for_function("state.trip && state.trip.stops.length && !$('app').classList.contains('busy') && state.routes.every(r => !r.pending)", timeout=30000)
+    page.wait_for_timeout(500)
+    lbl = page.text_content("#stopLabel")
+    if two:
+        check("a gas stop added while on the fastest route is picked for the fastest route, and says so", page.evaluate("state.keepFrom") == "other" and "on the fastest route" in lbl, [page.evaluate("state.keepFrom"), lbl])
+        n = page.evaluate("state.routes.length")
+        cards = page.locator("#routes .route:visible")
+        check("and you stay on that route, with the calm pick still there as the other card", (n < 2 or cards.count() == 2) and page.evaluate("!state.manual || state.manual.kind === 'kept'") and page.evaluate("state.rec !== state.sel || state.routes.length < 2"),
+              [n, cards.count(), page.evaluate("[state.rec && state.rec.kind, state.sel && state.sel.kind]")])
+    page.uncheck("#needGas")
+    page.wait_for_function("state.trip && !state.trip.stops.length && !$('app').classList.contains('busy') && state.routes.every(r => !r.pending)", timeout=30000)
+    page.evaluate("state.manual = null; update(false)")
+    T.STOP_AT[0], T.STOP_AT[1] = page.evaluate("(() => { const s = state.rec.shape, c = state.rec.cum; return s[c.findIndex(x => x >= 1.0)]; })()")
+    page.check("#needGas")
+    page.wait_for_function("state.trip && state.trip.stops.length && !$('app').classList.contains('busy')", timeout=30000)
+    check("on the calm route, the stop is picked for the calm route", "on the calm route" in page.text_content("#stopLabel") or page.evaluate("state.sel !== state.rec"), page.text_content("#stopLabel"))
+    check("no errors with the stop on your chosen route", not page.errors, page.errors)
+    page.context.close()
+    T.STOP_AT[0] = T.STOP_AT[1] = 0
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];

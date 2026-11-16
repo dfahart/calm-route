@@ -372,7 +372,7 @@ function calmestOf(routes){
   const forward = pool.filter(r => !backtracks(r));          // never pick a route that turns around for the stop
   if (forward.length) pool = forward;
   // Adding a stop must not swap the route: the one you had, driven through the stop, stays the pick
-  const kept = state.trip && (state.trip.stops || []).length && pool.find(r => r.kind === 'kept');
+  const kept = state.trip && (state.trip.stops || []).length && state.keepFrom === 'rec' && pool.find(r => r.kind === 'kept');
   if (kept) return kept;
   const trusted = pool.filter(trustOf);
   if (trusted.length) return usualOf(trusted);
@@ -1402,6 +1402,8 @@ $('form').addEventListener('submit', async e => {
     state.lastArea = {lat:trip.from.lat, lon:trip.from.lon, label:trip.from.here ? 'you' : trip.from.main};
     try { localStorage.setItem('calmRouteArea', JSON.stringify(state.lastArea)); } catch(e){}
     state.routes = routes; state.manual = null;
+    // A stop picked on a route other than the calm pick: stay on that route (now through the stop); the calm pick stays as the other card
+    if ((trip.stops || []).length && state.keepFrom === 'other') state.manual = routes.find(r => r.kind === 'kept') || null;
     rememberTrip(trip);
     state.fast = routes.reduce((a, b) => b.mins < a.mins ? b : a);
     routes.forEach(r => r.extra = Math.max(0, r.mins - state.fast.mins));
@@ -1475,6 +1477,10 @@ function update(fit, keepMap){
   const pick = practicePick(budget);
   state.pick = pick.route || null;
   state.rec = pick.route || calmestWithin(budget);            // what Calm Route recommends, whatever the driver has tapped
+  if (state.keepFrom === 'other' && state.manual && state.rec === state.manual && state.manual.kind === 'kept'){
+    const others = state.routes.filter(r => r !== state.manual);
+    if (others.length) state.rec = calmestOf(others);           // keep a calm alternative next to the route you chose
+  }
   state.sel = state.manual || state.rec;
   if (typeof renderScenicTrip === 'function') queueMicrotask(renderScenicTrip);
   $('budgetOut').textContent = budget === 0 ? 'None' : '+' + fmtDur(budget);
@@ -1483,7 +1489,8 @@ function update(fit, keepMap){
   const simple = profile.view === 'simple';
   // Simple view compares just two: the calm pick first, then the fastest. Details lists every route, quickest first.
   // Always the same two cards, so the driver can tap back and forth: the recommendation, then the fastest
-  const sorted = simple ? [state.rec, ...(state.fast !== state.rec ? [state.fast] : [])] : [...state.routes].sort((a, b) => a.mins - b.mins);
+  const second = state.manual && state.manual !== state.rec ? state.manual : state.fast;   // usually the fastest; your own choice if you picked another in Details
+  const sorted = simple ? [state.rec, ...(second !== state.rec ? [second] : [])] : [...state.routes].sort((a, b) => a.mins - b.mins);
   const dark = darkInfo();
   const focused = $('routes').contains(document.activeElement) ? document.activeElement.dataset.i : null;
   $('routes').innerHTML = sorted.map(r => {
@@ -1837,7 +1844,7 @@ $('wpN').addEventListener('change', () => { if (state.routes.length) setLink(); 
 function draw(fit){
   layer.clearLayers();
   const simple = profile.view === 'simple';   // simple view: only the recommended route on the map
-  const shown = simple ? [...new Set([state.rec || state.sel, state.fast])] : state.routes;   // simple view: just the calm pick and the fastest
+  const shown = simple ? [...new Set([state.rec || state.sel, state.fast, state.sel])] : state.routes;   // simple view: just the calm pick and the fastest
   shown.forEach(r => { if (r !== state.sel && r !== state.fast) L.polyline(r.shape, {color:'#9AAAB1', weight:4, opacity:.7}).addTo(layer); });
   if (state.fast !== state.sel) L.polyline(state.fast.shape, {color:'#5E717B', weight:4, opacity:.9, dashArray:'7 8'}).addTo(layer);   // the fastest, dashed, for comparison
   L.polyline(state.sel.shape, {color:'#fff', weight:10, opacity:1, interactive:false}).addTo(layer);
@@ -2756,15 +2763,24 @@ const asStop = (s, extra) => ({kind:s.kind, chain:s.chain || null, main:s.main, 
 const STOP_NAMES = {gas:'Gas', coffee:'Coffee', food:'Food'};
 const stopKind = st => STOP_NAMES[st.kind] || 'Stop';
 const sideText = st => st.onHw ? 'off a highway exit' : st.atTurn ? 'at a turn' : st.right ? 'on your right' : st.atLight ? 'on your left, at a light' : 'on your left';
-const AUTO = {gas:'needGas', food:'needFood'};
+// One automatic switch: Need gas. Food and coffee are chosen from the list ("Need a stop on the way?").
+// The Need food switch still works; it's off unless window.CALM_FLAGS = {foodSwitch:true} is set before the app loads.
+const FOOD_SWITCH = !!(window.CALM_FLAGS && window.CALM_FLAGS.foodSwitch);
+if (!FOOD_SWITCH && $('needFood')) $('needFood').closest('label').remove();
+const AUTO = FOOD_SWITCH ? {gas:'needGas', food:'needFood'} : {gas:'needGas'};
 // One stop of each kind (gas, coffee, food), kept in driving order
 // One stop at a time: simpler for the driver, and the map apps follow one stop reliably
 function setStops(list){
   state.stops = list.slice(-1);
   // Keep the route the driver had: through the stop, the router stops offering alternatives, and the way you were
   // shown (often one of those alternatives) would vanish. So ask for it again, through a few points along it.
-  if (!state.stops.length) state.keepVia = null;
-  else if (state.sel && state.sel.shape) state.keepVia = keepVia(state.sel, state.stops[0]);
+  if (!state.stops.length){ state.keepVia = null; state.keepFrom = null; }
+  else if (state.sel && state.sel.shape){
+    state.keepVia = keepVia(state.sel, state.stops[0]);
+    // Which route the stop was picked for: the calm pick, or one the driver chose instead (often the fastest)
+    state.keepFrom = state.sel === state.rec ? 'rec' : 'other';
+    state.stops[0].pickedOn = state.sel === state.rec ? 'the calm route' : state.sel === state.fast ? 'the fastest route' : 'your chosen route';
+  }
 }
 // Points along route r, with the stop slotted in by where it falls along the route
 function keepVia(r, stop){
@@ -2823,7 +2839,7 @@ async function autoStops(){
   if (autoAgain){ autoAgain = false; autoStops(); }
 }
 async function autoStopsOnce(){
-  const kind = $('needGas').checked ? 'gas' : $('needFood').checked ? 'food' : null;
+  const kind = $('needGas').checked ? 'gas' : $('needFood') && $('needFood').checked ? 'food' : null;
   if (!kind || !state.sel || hasKind(kind)) return;
   const run = state.runId, r = state.sel;
   const list = await findStops(kind, true).then(o => o || []).catch(() => []);
@@ -2867,9 +2883,9 @@ async function autoStopsOnce(){
 function renderStop(){
   const list = state.stops;
   $('stopLabel').innerHTML = !list.length ? 'Need a stop on the way?'
-    : list.map((st, i) => `<span class="stopline">${stopKind(st)}: <b>${esc(st.main)}</b>${st.right != null ? ` <span class="lede">(${sideText(st)}, ${(+st.at).toFixed(1)} mi in)</span>` : ''} <button type="button" class="ghost stopRemove" data-remove="${i}" aria-label="Remove the ${stopKind(st).toLowerCase()} stop at ${esc(st.main)}">Remove</button></span>`).join('');
+    : list.map((st, i) => `<span class="stopline">${stopKind(st)}: <b>${esc(st.main)}</b>${st.right != null ? ` <span class="lede">(${sideText(st)}, ${(+st.at).toFixed(1)} mi in${st.pickedOn ? ` on ${st.pickedOn}` : ''})</span>` : ''} <button type="button" class="ghost stopRemove" data-remove="${i}" aria-label="Remove the ${stopKind(st).toLowerCase()} stop at ${esc(st.main)}">Remove</button></span>`).join('');
   $('stopBox').querySelectorAll('[data-stop]').forEach(b => { b.textContent = STOP_NAMES[b.dataset.stop] + (hasKind(b.dataset.stop) ? ' (change)' : ''); });
-  if (list.length) $('stopList').innerHTML = `<p class="lede" style="margin:6px 0 0">Every route now goes through this stop, and it’s added as a stop in Google and Apple Maps (Waze gets the destination only). Picking another place replaces it.</p>`;
+  if (list.length) $('stopList').innerHTML = `<p class="lede" style="margin:6px 0 0">The routes below all go through this stop, and it’s added as a stop in Google and Apple Maps (Waze gets the destination only). To pick a stop on a different route, choose that route first, then add the stop again.</p>`;
 }
 $('stopBox').addEventListener('click', e => {
   const k = e.target.closest('[data-stop]'); if (k){ findStops(k.dataset.stop); return; }
