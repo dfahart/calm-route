@@ -472,6 +472,65 @@ with sync_playwright() as p:
     check("with no pinned points the box is hidden", page.evaluate("pinInfo().pins.length") > 0 or not page.is_visible("#handoffNote"))
     check("no errors with the hand-off box", not page.errors, page.errors)
     page.context.close()
+    # Learning from drives: a route that felt fine is trusted for that trip; rough drives with a pattern suggest a profile change
+    page = T.new_page(b, profile={}, query=f"?stadiaKey={T.STADIA_KEY}")
+    trip(page); page.wait_for_function("state.routes.every(r => !r.pending)", timeout=20000)
+    other = page.evaluate("(() => { const c = calmestOf(state.routes); return state.routes.findIndex(r => r !== c && r !== state.fast); })()")
+    if other < 0: other = page.evaluate("state.routes.findIndex(r => r !== calmestOf(state.routes))")
+    page.evaluate(f"selectRoute({other})")
+    name = page.evaluate("state.sel.name")
+    page.evaluate("noteDriveStarted(navApp); practice.pending.at = Date.now() - 5 * 60000; savePractice(); renderAsk()")
+    page.click("#driveAsk [data-feel=fine]")
+    check("a drive that felt fine is remembered as a trusted route, and the app says so",
+          page.evaluate("trustedRoutes.length") == 1 and "remember this route" in page.text_content("#driveAsk"), page.text_content("#driveAsk"))
+    page.evaluate("state.trip = null; tripCache.clear(); submitTrip()")
+    page.wait_for_function("state.routes.length && state.routes.every(r => !r.pending) && !$('app').classList.contains('busy')", timeout=30000)
+    fit = page.evaluate("(() => { const t = trustedRoutes[0]; return t.pts.filter(p => nearestOnShape(state.sel.shape, p).d < 0.04).length / t.pts.length; })()")
+    check("planning the same trip again picks the route you drove (same roads, not just a similar name)",
+          page.evaluate("!!trustOf(state.sel) && state.sel === usualOf(state.routes)") and fit >= 0.95, [fit, page.evaluate("state.sel.name"), name])
+    check("its card says 'Your usual calm way' and how often it felt fine",
+          "Your usual calm way" in page.text_content("#routes") and "felt fine once" in page.text_content("#routes"))
+    page.evaluate("selectRoute(state.routes.indexOf(state.sel))")
+    page.evaluate("noteDriveStarted(navApp); practice.pending.at = Date.now() - 5 * 60000; savePractice(); renderAsk()")
+    page.click("#driveAsk [data-feel=fine]")
+    check("driving it again and feeling fine counts up, without a second copy", page.evaluate("[trustedRoutes.length, trustedRoutes[0].fine]") == [1, 2])
+    page.evaluate("noteDriveStarted(navApp); practice.pending.at = Date.now() - 5 * 60000; savePractice(); renderAsk()")
+    page.click("#driveAsk [data-feel=rough]")
+    check("a rough drive on a trusted route ends the trust", page.evaluate("trustedRoutes.length") == 0 and "won’t offer this route first" in page.text_content("#driveAsk"))
+    check("trusted routes are kept with the rest of the driver's data (in backups)", page.evaluate("localStorage.getItem('calmRouteTrusted')") == "[]")
+    # Forget it
+    page.evaluate("noteDriveStarted(navApp); practice.pending.at = Date.now() - 5 * 60000; savePractice(); renderAsk()")
+    page.click("#driveAsk [data-feel=fine]")
+    page.evaluate("state.routes.forEach(r => delete r._trust); update(false)")
+    page.click("#routes [data-forget]")
+    check("'Forget it' on the card removes the trusted route", page.evaluate("trustedRoutes.length") == 0 and "Your usual calm way" not in page.text_content("#routes"))
+    # Rough drives with a pattern
+    page.evaluate("""(() => { profile = {...profile, left:1}; practice.history = [
+        {at:1, feel:'rough', m:{merges:0, lefts:2, busy:0, bridges:0, turns:4}},
+        {at:2, feel:'fine',  m:{merges:0, lefts:0, busy:0, bridges:0, turns:4}}]; savePractice();
+        practice.pending = {at:Date.now() - 5 * 60000, to:'Test', name:'via Test', mins:10, m:{merges:0, lefts:3, busy:0, bridges:0, turns:5}, practice:null, route:null};
+        savePractice(); renderAsk(); })()""")
+    page.click("#driveAsk [data-feel=tense]")
+    txt = page.text_content("#driveAsk")
+    check("two tougher drives with lefts, and none that felt fine, suggest avoiding lefts more", "Left turns with no traffic light came up on 2" in txt and page.is_visible("#driveAsk [data-suggest=yes]"), txt)
+    page.click("#driveAsk [data-suggest=yes]")
+    check("saying yes moves lefts one step, to 'Avoid it', and says it can be changed", page.evaluate("profile.left") == 2 and "Avoid it" in page.text_content("#driveAsk") and page.evaluate("JSON.parse(localStorage.getItem('calmRouteProfile')).left") == 2)
+    page.evaluate("""(() => { profile = {...profile, merge:0}; practice.history = [{at:1, feel:'rough', m:{merges:1, lefts:0, busy:0, bridges:0, turns:2}}];
+        practice.pending = {at:Date.now() - 5 * 60000, to:'Test', name:'via Test', mins:10, m:{merges:2, lefts:0, busy:0, bridges:0, turns:2}, practice:null, route:null};
+        savePractice(); renderAsk(); })()""")
+    page.click("#driveAsk [data-feel=rough]")
+    page.click("#driveAsk [data-suggest=no]")
+    check("'Not now' leaves the profile alone", page.evaluate("profile.merge") == 0 and page.evaluate("!!practice.declined.merge"))
+    page.evaluate("""(() => { practice.pending = {at:Date.now() - 5 * 60000, to:'Test', name:'via Test', mins:10, m:{merges:2, lefts:0, busy:0, bridges:0, turns:2}, practice:null, route:null};
+        savePractice(); renderAsk(); })()""")
+    page.click("#driveAsk [data-feel=rough]")
+    check("and the same suggestion doesn't come back for a while", not page.is_visible("#driveAsk [data-suggest]"))
+    page.evaluate("""(() => { practice.history = []; practice.pending = {at:Date.now() - 5 * 60000, to:'Test', name:'via Test', mins:10, m:{merges:0, lefts:3, busy:0, bridges:0, turns:2}, practice:null, route:null};
+        savePractice(); renderAsk(); })()""")
+    page.click("#driveAsk [data-feel=fine]")
+    check("a drive that felt fine never brings a suggestion", not page.is_visible("#driveAsk [data-suggest]"))
+    check("no errors with learning from drives", not page.errors, page.errors)
+    page.context.close()
     # Doubling back: leaving a stop back along the road you came in on (tonight's Marathon at Centre and US-131)
     page = T.new_page(b, profile={})
     r = page.evaluate("""(() => { const N = (la, lo) => [42.2 + la / 69.17, -85.6 + lo / (69.17 * Math.cos(42.2 * Math.PI / 180))];

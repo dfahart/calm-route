@@ -121,6 +121,7 @@ const VARIANTS = [
   {kind:'paved',    hw:0.2, tolls:0.3, mp:12, paved:true},
   {kind:'notoll',   hw:0.5, tolls:0.0, mp:12, notoll:true},
   {kind:'liked',    hw:0.5, tolls:0.3, mp:12, via:true},
+  {kind:'trusted',  hw:0.5, tolls:0.3, mp:12, trusted:true},
 ];
 const MAX_TRIP_MILES = 900;
 
@@ -300,6 +301,37 @@ try { avoidSpots = (JSON.parse(localStorage.getItem('calmRouteAvoid')) || []).fi
 let likedRoads = [];
 try { likedRoads = (JSON.parse(localStorage.getItem('calmRouteLiked')) || []).filter(x => x && isFinite(x.lat) && isFinite(x.lon)); } catch(e){}
 const saveLiked = () => { try { localStorage.setItem('calmRouteLiked', JSON.stringify(likedRoads)); } catch(e){} };
+// Trusted routes: a route you drove that felt fine is remembered for that trip, and offered first next time.
+// Stored as points along it (about every quarter mile), only in this browser.
+let trustedRoutes = [];
+try { trustedRoutes = (JSON.parse(localStorage.getItem('calmRouteTrusted')) || []).filter(x => x && Array.isArray(x.pts) && x.pts.length >= 2 && Array.isArray(x.from) && Array.isArray(x.to)); } catch(e){}
+const saveTrusted = () => { try { localStorage.setItem('calmRouteTrusted', JSON.stringify(trustedRoutes)); } catch(e){} };
+// Several routes can follow a trusted one closely (two ways that share most roads): the closest match is the one you drove
+function usualOf(routes){
+  const t = routes.filter(trustOf);
+  return t.length ? t.reduce((a, b) => trustOf(b).fine > trustOf(a).fine || (trustOf(b).fine === trustOf(a).fine && b._trustFit < a._trustFit) ? b : a) : null;
+}
+function samplePts(r){
+  const step = Math.max(0.25, r.total / 40), out = [];
+  for (let i = 0, next = 0; i < r.shape.length; i++) if (r.cum[i] >= next){ out.push(r.shape[i].map(x => +x.toFixed(5))); next += step; }
+  const last = r.shape[r.shape.length - 1].map(x => +x.toFixed(5)); out.push(last);
+  return out;
+}
+// The trusted routes for a trip: same start and end, within about 300 yards
+const trustedFor = (from, to) => trustedRoutes.filter(t => hav(t.from, [from.lat, from.lon]) < 0.18 && hav(t.to, [to.lat, to.lon]) < 0.18);
+// Is this route one of them? Nearly all of its points must lie on the route
+function trustOf(r){
+  if (r._trust !== undefined) return r._trust;
+  const t = state.trip ? trustedFor(state.trip.from, state.trip.to) : [];
+  let best = null;
+  for (const tr of t){
+    const d = tr.pts.map(p => nearestOnShape(r.shape, p).d), share = d.filter(x => x < 0.04).length / d.length;
+    const fit = d.reduce((a, b) => a + b, 0) / d.length;                      // average distance off: lower is a closer match
+    if (share >= 0.85 && (!best || tr.fine > best.tr.fine || (tr.fine === best.tr.fine && fit < best.fit))) best = {tr, fit};
+  }
+  r._trustFit = best ? best.fit : Infinity;
+  return r._trust = best ? best.tr : null;
+}
 const LIKE_REACH_MI = 3;     // a liked road counts within this distance of where it was picked
 const SPOT_M = 35;            // metres around a spot that routes are kept out of
 const SPOT_HIT_MI = 0.025;    // a route passing this close (about 40 m) goes through the spot
@@ -336,6 +368,8 @@ function calmestOf(routes){
   let pool = clean.length ? clean : routes;
   const forward = pool.filter(r => !backtracks(r));          // never pick a route that turns around for the stop
   if (forward.length) pool = forward;
+  const trusted = pool.filter(trustOf);
+  if (trusted.length) return usualOf(trusted);
   // Near-ties go to the quicker route: a few extra minutes must buy a calmer drive you'd actually notice
   const best = Math.min(...pool.map(stressOf)), close = pool.filter(r => stressOf(r) <= best + Math.max(0.5, best * 0.05));
   return close.reduce((a, b) => b.mins < a.mins ? b : a);
@@ -972,7 +1006,7 @@ function limiter(max){
 const polite = limiter(STADIA ? 6 : 3);   // the paid service takes more at once
 // One route request; the fastest one also asks for alternates (extra choices for no extra time)
 const routeBody = (v, trip, alternates, withSpots) => ({
-  locations:[{lat:trip.from.lat, lon:trip.from.lon}, ...((trip.stops || []).length ? trip.stops.map(st => ({lat:st.lat, lon:st.lon, type:'through'})) : v.via && trip.likedVia ? [{lat:trip.likedVia.lat, lon:trip.likedVia.lon, type:'through'}] : []), {lat:trip.to.lat, lon:trip.to.lon}],
+  locations:[{lat:trip.from.lat, lon:trip.from.lon}, ...((trip.stops || []).length ? trip.stops.map(st => ({lat:st.lat, lon:st.lon, type:'through'})) : v.trusted && trip.trusted ? trip.trusted.via.map(p => ({lat:p[0], lon:p[1], type:'through'})) : v.via && trip.likedVia ? [{lat:trip.likedVia.lat, lon:trip.likedVia.lon, type:'through'}] : []), {lat:trip.to.lat, lon:trip.to.lon}],
   costing:'auto', costing_options:{auto:{use_highways:v.hw, use_tolls:v.tolls, maneuver_penalty:v.mp, ...(v.paved ? {exclude_unpaved:true} : {}),
     ...(v.notoll || trip.noTolls ? {use_tolls:0, exclude_tolls:true} : {})}},
   directions_options:{units:'miles'}, ...(alternates ? {alternates} : {}),
@@ -1209,6 +1243,12 @@ async function resolve(key){
 const MAX_ROUTES = 5;
 const CORE_KINDS = ['fastest', 'fewturns', 'paved', 'backroads', 'nohw'];   // 'fewerhw' and 'notoll' are asked for only when needed
 const tripCache = new Map();
+// Three points along the best trusted route for this trip, for asking the router to drive it again
+function trustedVia(from, to){
+  const t = trustedFor(from, to).sort((a, b) => b.fine - a.fine)[0]; if (!t) return null;
+  const n = t.pts.length, via = [0.25, 0.5, 0.75].map(f => t.pts[Math.min(n - 2, Math.max(1, Math.round(f * (n - 1))))]);
+  return {id:t.id, fine:t.fine, via};
+}
 function likedViaFor(from, to){
   const d = hav([from.lat, from.lon], [to.lat, to.lon]);
   let best = null, bestOff = Infinity;
@@ -1220,7 +1260,7 @@ function likedViaFor(from, to){
   });
   return best;
 }
-const tripKey = t => [t.from.lat, t.from.lon, t.to.lat, t.to.lon].map(x => (+x).toFixed(5)).join(',') + (t.noTolls ? '|notoll' : '') + '|' + (t.spots || []).map(x => x.id).join(',') + '|' + (t.likedVia ? t.likedVia.id : '') + ':' + likedRoads.length + '|' + (t.stops || []).map(st => ll([st.lat, st.lon])).join(';');
+const tripKey = t => [t.from.lat, t.from.lon, t.to.lat, t.to.lon].map(x => (+x).toFixed(5)).join(',') + (t.noTolls ? '|notoll' : '') + '|' + (t.spots || []).map(x => x.id).join(',') + '|' + (t.likedVia ? t.likedVia.id : '') + '|' + (t.trusted ? t.trusted.id + '.' + t.trusted.fine : '') + ':' + likedRoads.length + '|' + (t.stops || []).map(st => ll([st.lat, st.lon])).join(';');
 const sameRoute = (a, b) => Math.abs(a.summary.length - b.summary.length) < 0.05 && Math.abs(a.summary.time - b.summary.time) < 20;
 
 function computeTrip(trip){
@@ -1242,6 +1282,7 @@ function computeTrip(trip){
       if (kind === 'paved' && !trips.length) await attempt(byKind('fewerhw'));
       if (kind === 'fastest' && !trip.noTolls && trips.some(t => t.summary.has_toll)) await attempt(byKind('notoll'));
       if (kind === 'fastest' && trip.likedVia && !(trip.stops || []).length) await attempt(byKind('liked'));
+      if (kind === 'fastest' && trip.trusted && !(trip.stops || []).length) await attempt(byKind('trusted'));
       job.progress.routesDone++;
       notify();
     }));
@@ -1251,7 +1292,7 @@ function computeTrip(trip){
     const fastest = found.reduce((a, b) => b.trip.summary.time < a.trip.summary.time ? b : a);
     const fewest = found.reduce((a, b) => b.route.turns < a.route.turns ? b : a, fastest);
     const must = found.filter(f => f !== fastest && (f.kind === 'paved' || (f.kind === 'notoll' && found.some(x => x.route.toll))
-      || (f === fewest && fastest.route.turns - f.route.turns >= 2) || (f.kind === 'liked' && f.route.likedMiles > 0)));   // the simplest route is always offered
+      || (f === fewest && fastest.route.turns - f.route.turns >= 2) || (f.kind === 'liked' && f.route.likedMiles > 0) || f.kind === 'trusted'));   // the simplest route is always offered
     const rest = found.filter(f => f !== fastest && !must.includes(f)).sort((a, b) => stressOf(a.route) - stressOf(b.route));
     const keep = [fastest, ...must, ...rest].slice(0, MAX_ROUTES);
     found.splice(0, found.length, ...keep.sort((a, b) => a.order - b.order));
@@ -1298,7 +1339,7 @@ function prefetch(){
     if (!f || !t) return;
     const d = hav([f.lat, f.lon], [t.lat, t.lon]);
     if (d < 0.05 || d > MAX_TRIP_MILES * 0.85) return;
-    tripJob({from:f, to:t, noTolls: profile.toll === 3, spots: avoidSpots.slice(), likedVia: likedViaFor(f, t), stops: []}).ready.catch(() => {});
+    tripJob({from:f, to:t, noTolls: profile.toll === 3, spots: avoidSpots.slice(), likedVia: likedViaFor(f, t), trusted: trustedVia(f, t), stops: []}).ready.catch(() => {});
   }, 400);
 }
 function drawPreview(found){
@@ -1322,7 +1363,7 @@ $('form').addEventListener('submit', async e => {
     await resolve('from'); await resolve('to');
     if (run !== state.runId) return;
     closeAllSuggestions();
-    const trip = {from: state.from, to: state.to, noTolls: profile.toll === 3, spots: avoidSpots.slice(), likedVia: likedViaFor(state.from, state.to), stops: state.stops.slice()};   // locked in for this search
+    const trip = {from: state.from, to: state.to, noTolls: profile.toll === 3, spots: avoidSpots.slice(), likedVia: likedViaFor(state.from, state.to), trusted: trustedVia(state.from, state.to), stops: state.stops.slice()};   // locked in for this search
     if (hav([trip.from.lat, trip.from.lon], [trip.to.lat, trip.to.lon]) < 0.05) throw new Error('The start and destination are the same place.');
     if (hav([trip.from.lat, trip.from.lon], [trip.to.lat, trip.to.lon]) > MAX_TRIP_MILES * 0.85) throw new Error(`That trip is too long for this prototype. It handles trips up to about ${MAX_TRIP_MILES} miles.`);
 
@@ -1419,7 +1460,7 @@ function update(fit, keepMap){
   if (typeof renderScenicTrip === 'function') queueMicrotask(renderScenicTrip);
   $('budgetOut').textContent = budget === 0 ? 'None' : '+' + fmtDur(budget);
   $('budgetHint').textContent = budgetHintText(budget);
-  const calmest = calmestOf(state.routes);
+  const calmest = calmestOf(state.routes), usual = usualOf(state.routes);
   const sorted = [...state.routes].sort((a, b) => a.mins - b.mins);
   const dark = darkInfo();
   const focused = $('routes').contains(document.activeElement) ? document.activeElement.dataset.i : null;
@@ -1428,6 +1469,7 @@ function update(fit, keepMap){
     const tags = [];
     if (r === state.fast) tags.push('<span class="tag">Fastest</span>');
     if (r === calmest) tags.push('<span class="tag calm">Calmest for you</span>');
+    if (r === usual) tags.push(`<span class="tag trusted">Your usual calm way</span>`);
     if (r === state.pick) tags.push('<span class="tag practice">Practice pick</span>');
     if (r === fewestTurns(state.routes)) tags.push(`<span class="tag simple">Fewest turns (${r.turns})</span>`);
     breaks(r).forEach(b => tags.push(`<span class="tag never">Has ${esc(b)}</span>`));
@@ -1447,6 +1489,7 @@ function update(fit, keepMap){
       <p class="moments">${esc(momentsText(r))} · ${r.miles.toFixed(1)} mi</p>
       ${whyText(r) ? `<p class="why">${esc(whyText(r))}</p>` : ''}
       ${r.likedMiles >= 0.2 && r.detailed ? `<p class="liked">Uses ${esc(r.likedNames.join(' and '))}, ${r.likedNames.length > 1 ? 'roads' : 'a road'} you like (${r.likedMiles.toFixed(1)} mi).</p>` : ''}
+      ${r === usual ? `<p class="trusted">You’ve driven this way and it felt fine ${trustOf(r).fine === 1 ? 'once' : trustOf(r).fine === 2 ? 'twice' : trustOf(r).fine + ' times'}. <button type="button" class="ghost forgetTrust" data-forget="${esc(trustOf(r).id)}">Forget it</button></p>` : ''}
       ${nightText(r) ? `<p class="night">${esc(nightText(r))}</p>` : ''}
       ${fuelText(r) ? `<p class="fuel">${esc(fuelText(r))}</p>` : ''}
     </li>`;
@@ -2125,20 +2168,58 @@ function noteDriveStarted(app){
   const followed = app !== 'waze';
   practice.pending = {at:Date.now(), to:state.trip.to.main, name:followed ? r.name : 'Waze’s own route', mins:Math.round(r.mins),
     m:followed ? {merges:r.merges, lefts:r.uLefts, bridges:r.bridges, hwMiles:+r.hwMiles.toFixed(1), busy:+(r.busyMiles + r.hwMiles).toFixed(1), turns:r.turns} : {},
-    practice: followed && state.pick === r ? practice.skill : null};
+    practice: followed && state.pick === r ? practice.skill : null,
+    route: followed ? {from:[+state.trip.from.lat.toFixed(5), +state.trip.from.lon.toFixed(5)], to:[+state.trip.to.lat.toFixed(5), +state.trip.to.lon.toFixed(5)], pts:samplePts(r), trusted:trustOf(r) ? trustOf(r).id : null} : null};
   savePractice();
 }
 $('gmaps').addEventListener('click', () => noteDriveStarted(navApp));
 $('alsoOpen').addEventListener('click', e => { const a = e.target.closest('a'); if (a) noteDriveStarted(a.dataset.app); });
 function renderAsk(done){
   const box = $('driveAsk'), p = practice.pending;
-  if (done){ box.hidden = false; box.innerHTML = `<h2>${esc(done.title)}</h2><p>${esc(done.text)}</p><button type="button" class="ghost" data-feel="close">Close</button>`; return; }
+  if (done){ const sg = done.suggest;
+    box.hidden = false; box.innerHTML = `<h2>${esc(done.title)}</h2><p>${esc(done.text)}</p>`
+      + (sg ? `<div class="suggest"><p>${esc(sg.text)}</p><button type="button" data-suggest="yes" data-k="${sg.key}">${esc(sg.yes)}</button> <button type="button" class="ghost" data-suggest="no" data-k="${sg.key}">Not now</button></div>` : '')
+      + `<button type="button" class="ghost" data-feel="close">Close</button>`; return; }
   if (!p || Date.now() - p.at > practiceCfg.forgetAfter){ if (p){ practice.pending = null; savePractice(); } box.hidden = true; box.innerHTML = ''; return; }
   if (Date.now() - p.at < practiceCfg.askAfter){ box.hidden = true; return; }
   box.hidden = false;
   box.innerHTML = `<h2>How did the drive to ${esc(p.to)} go?</h2><p>${esc(p.name)}, about ${fmtDur(p.mins)}. Any answer earns a pebble.</p>
     <div class="feel"><button type="button" data-feel="fine">Felt fine</button><button type="button" data-feel="tense">A bit tense</button><button type="button" data-feel="rough">Rough</button></div>
     <button type="button" class="ghost" data-feel="later">Haven’t driven it yet</button> <span aria-hidden="true">·</span> <button type="button" class="ghost" data-feel="none">I didn’t drive it</button>`;
+}
+// After a drive: a route that felt fine becomes trusted for that trip; a rough drive on a trusted route ends the trust.
+// Every logged drive also goes into a short history, which is how patterns in rough drives are spotted.
+function rememberHowItWent(p, feel){
+  const rt = p.route;
+  if (rt && feel === 'fine'){
+    const same = trustedRoutes.find(t => t.id === rt.trusted) || trustedRoutes.find(t => hav(t.from, rt.from) < 0.18 && hav(t.to, rt.to) < 0.18
+      && t.pts.filter(q => rt.pts.some(x => hav(x, q) < 0.06)).length / t.pts.length >= 0.85);
+    if (same){ same.fine++; same.at = Date.now(); }
+    else trustedRoutes.push({id:'t' + Date.now().toString(36), from:rt.from, to:rt.to, toName:p.to, name:p.name, pts:rt.pts, fine:1, at:Date.now()});
+    trustedRoutes = trustedRoutes.sort((a, b) => b.at - a.at).slice(0, 30);
+    saveTrusted();
+  } else if (rt && rt.trusted && feel === 'rough'){ trustedRoutes = trustedRoutes.filter(t => t.id !== rt.trusted); saveTrusted(); }
+  practice.history = [...(practice.history || []), {at:Date.now(), feel, m:p.m || {}}].slice(-20);
+}
+// What each part of the profile looks like on a drive. Used to spot what rough drives have in common.
+const HINT_SIGNS = [
+  {key:'merge',  has:m => m.merges > 0,  say:'highway merges'},
+  {key:'left',   has:m => m.lefts > 0,   say:'left turns with no traffic light'},
+  {key:'boxed',  has:m => m.busy >= 2,   say:'stretches of busy road'},
+  {key:'bridge', has:m => m.bridges > 0, say:'bridges or tunnels'},
+  {key:'turns',  has:m => m.turns >= 10, say:'lots of turns'},
+];
+// Two of the last few rough or tense drives had the same thing, and drives that felt fine didn't: offer to avoid it
+// more. Only ever a suggestion, one step at a time, and "Not now" holds for a month.
+function profileHint(){
+  const recent = (practice.history || []).slice(-6), hard = recent.filter(h => h.feel !== 'fine'), fine = recent.filter(h => h.feel === 'fine');
+  const now = Date.now(), declined = practice.declined || {};
+  const c = HINT_SIGNS.map(s => ({s, bad:hard.filter(h => s.has(h.m)).length, good:fine.filter(h => s.has(h.m)).length}))
+    .filter(x => x.bad >= 2 && x.bad > x.good && (+profile[x.s.key] || 0) < 2 && !(declined[x.s.key] && now - declined[x.s.key] < 30 * 864e5))
+    .sort((a, b) => b.bad - a.bad)[0];
+  if (!c) return null;
+  const next = LEVELS[(+profile[c.s.key] || 0) + 1].label;
+  return {key:c.s.key, text:`${c.s.say[0].toUpperCase() + c.s.say.slice(1)} came up on ${c.bad} of your recent tougher drives. Want routes to steer around them more? (That sets them to “${next}” in your profile.)`, yes:`Yes, avoid them more`};
 }
 function logDrive(feel){
   const p = practice.pending; if (!p) return;
@@ -2158,16 +2239,37 @@ function logDrive(feel){
       if (practice.fine[sk.key] >= practiceCfg.fineToGrow){ practice.levels[sk.key] = L + 1; practice.fine[sk.key] = 0; practice.levelUps++; grew.push(sk); }
     } else if (feel === 'rough') practice.fine[sk.key] = 0;
   });
+  rememberHowItWent(p, feel);
   const fresh = KEEPSAKES.filter(k => !practice.keepsakes.includes(k.id) && k.has(practice));
   fresh.forEach(k => practice.keepsakes.push(k.id));
   savePractice(); renderPebbles(); if (state.routes.length) update(false);
   const title = feel === 'fine' ? 'Lovely.' : feel === 'tense' ? 'That counts.' : 'Thanks for telling me.';
   const lead = feel === 'fine' ? '' : feel === 'tense' ? 'A bit tense is what a small step feels like. ' : 'Rough drives still count, and nothing is lost. ';
+  const trustNote = p.route && feel === 'fine' ? ' I’ll remember this route and offer it first next time you make this trip.'
+    : p.route && p.route.trusted && feel === 'rough' ? ' I won’t offer this route first any more.' : '';
   renderAsk({title, text: lead + `+${plural(earned, 'pebble')}` + (p.practice ? ' (one extra for practicing)' : '') + '.'
     + grew.map(sk => ` Your ${sk.name.toLowerCase()} stack grew to ${levelOf(sk.key)} stones.`).join('')
-    + (fresh.length ? ` New keepsake${fresh.length > 1 ? 's' : ''}: ${fresh.map(k => k.name).join(', ')}.` : '')});
+    + (fresh.length ? ` New keepsake${fresh.length > 1 ? 's' : ''}: ${fresh.map(k => k.name).join(', ')}.` : '') + trustNote,
+    suggest: feel === 'fine' ? null : profileHint()});
 }
+$('routes').addEventListener('click', e => {
+  const f = e.target.closest('[data-forget]'); if (!f) return;
+  e.stopPropagation();
+  trustedRoutes = trustedRoutes.filter(t => t.id !== f.dataset.forget); saveTrusted();
+  state.routes.forEach(r => { delete r._trust; });
+  state.manual = null; defaultBudget(); update(false); setStatus('Forgotten. That route won’t be offered first any more.');
+}, true);
 $('driveAsk').addEventListener('click', e => {
+  const sg = e.target.closest('[data-suggest]');
+  if (sg){ const k = sg.dataset.k, box = sg.closest('.suggest');
+    if (sg.dataset.suggest === 'yes' && QUESTIONS.some(q => q.key === k)){
+      profile = {...profile, [k]:Math.min(2, (+profile[k] || 0) + 1)};
+      try { localStorage.setItem('calmRouteProfile', JSON.stringify(profile)); } catch(err){}
+      renderProfileSummary();
+      if (state.routes.length){ state.manual = null; state.touched = false; defaultBudget(); update(false); }
+      box.innerHTML = `<p>Done: ${esc(QUESTIONS.find(q => q.key === k).short)} are now set to “${LEVELS[profile[k]].label}”. You can change it any time in your comfort profile.</p>`;
+    } else { practice.declined = {...(practice.declined || {}), [k]:Date.now()}; savePractice(); box.remove(); }
+    return; }
   const b = e.target.closest('[data-feel]'); if (!b) return;
   if (b.dataset.feel === 'close'){ $('driveAsk').hidden = true; $('driveAsk').innerHTML = ''; }
   else if (b.dataset.feel === 'later'){ if (practice.pending){ practice.pending.at = Date.now(); savePractice(); } renderAsk(); }   // ask again next time

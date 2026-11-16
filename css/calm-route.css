@@ -60,6 +60,11 @@ a{color:var(--lake)}
 #app.simple .route[aria-checked=false], #app.simple .budget, #app.simple .strip, #app.simple .route .why, #app.simple .route .fuel,
 #app.simple #momentBox, #app.simple #briefBox, #app.simple .key{display:none}
 .tag.simple{background:#EAF0F5;color:#2E5A75}
+.tag.trusted{background:#EEF4EA;color:#3E5F35}
+.route p.trusted{font-size:14px;color:var(--sub);margin:6px 0 0}
+.route p.trusted .ghost{font-size:14px;padding:2px 6px}
+#driveAsk .suggest{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+#driveAsk .suggest p{margin:0 0 8px}
 
 .profile-pill{width:100%;display:flex;align-items:center;gap:10px;text-align:left;padding:10px 14px;border:1px solid var(--line);background:var(--paper);border-radius:var(--r-md);cursor:pointer;margin-bottom:16px}
 .profile-pill:hover{border-color:var(--lake)}
