@@ -130,7 +130,7 @@ a{color:var(--lake)}
 .progress i{display:block;height:100%;width:0;background:var(--lake);transition:width .4s ease}
 .busy .progress{display:block}
 
-.intro{margin:22px 4px 0;color:var(--sub);font-size:15px;max-width:52ch}
+.intro{margin:18px 4px 0;color:var(--sub);font-size:15px;max-width:52ch}
 .intro p{margin:0 0 10px}
 
 /* results */
@@ -460,3 +460,6 @@ legend{font-weight:700;margin-bottom:8px;padding:0}
 .placerow .placebtns .ghost{font-size:14px}
 .practicerow [hidden]{display:none !important}
 .needgas{margin-bottom:0}
+/* tidy: the scenic card matches the others; no empty gap where saved places would be */
+.scenic{border:0;border-radius:var(--r-lg);padding:14px 16px}
+#quick:empty{display:none}
