@@ -2271,7 +2271,8 @@ function renderPebbles(){
   const psk = SKILLS.find(x => x.key === practice.skill);
   $('pebbleSub').textContent = n ? `${plural(practice.drives, 'drive')} logged.` + (practice.on && psk ? ` ${psk.name} stack: ${levelOf(psk.key)} of 5.` : '') : (practice.on ? 'Practice is on. Log a drive to collect your first pebble.' : 'Collect a pebble for every drive you log');
   $('pebbleIcon').innerHTML = miniPile(n);
-  $('pebbleHeap').innerHTML = heapSvg(n) + `<p class="heapn">${n}</p><p class="heaps">${n === 1 ? 'pebble' : 'pebbles'}${practice.drives ? ` from ${plural(practice.drives, 'drive')}` : ''}</p>`;
+  $('pebbleHeap').innerHTML = n ? heapSvg(n) + `<p class="heapn">${n}</p><p class="heaps">${n === 1 ? 'pebble' : 'pebbles'}${practice.drives ? ` from ${plural(practice.drives, 'drive')}` : ''}</p>`
+    : `<svg viewBox="0 0 60 42" width="72" height="50" aria-hidden="true">${ghostStone(0, 0, 1, 4)}</svg><p class="heaps">Your first pebble comes after your first drive.</p>`;
   $('pebbleState').textContent = $('pebbleCard').open ? 'Close' : 'Open';
   $('practiceOn').checked = !!practice.on;
   $('practiceSkill').innerHTML = SKILLS.map(sk => `<option value="${sk.key}"${sk.key === practice.skill ? ' selected' : ''}>${esc(sk.long[0].toUpperCase() + sk.long.slice(1))}</option>`).join('');
