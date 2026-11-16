@@ -206,6 +206,15 @@ with sync_playwright() as p:
     check("switching to Details brings everything back and remembers it", page.locator("#routes .route:visible").count() > 1 and vis(".budget") and page.evaluate("JSON.parse(localStorage.getItem('calmRouteProfile')).view") == "full")
     page.click(".viewtoggle [data-view=simple]")
     check("and back to Simple", page.locator("#routes .route:visible").count() == 1 + nfast)
+    if nfast:
+        page.click("#routes .route.isfast")
+        cards = page.locator("#routes .route:visible")
+        check("simple view: tapping the fastest selects it and the calm pick stays, so you can tap back",
+              cards.count() == 2 and "isfast" in cards.nth(1).get_attribute("class") and cards.nth(1).get_attribute("aria-checked") == "true" and cards.first.get_attribute("aria-checked") == "false",
+              [cards.count(), [cards.nth(i).get_attribute("aria-checked") for i in range(cards.count())]])
+        check("and the map still shows the calm pick's line, to tap", page.evaluate("(() => { let n = 0; layer.eachLayer(l => { if (l instanceof L.Polyline && l.options.weight === 4) n++; }); return n; })()") == 1)
+        page.locator("#routes .route:visible").first.click()
+        check("tapping the calm pick switches back, still with both shown", page.locator("#routes .route:visible").count() == 2 and page.evaluate("state.sel === state.rec"))
     page.click("#editProfile")
     check("the profile asks how much detail, with 'Just the calm pick (I trust Calm Route)'", "How much detail do you want?" in page.text_content("#moreBox") and "I trust Calm Route" in page.text_content("#moreBox"))
     check("no errors in simple view", not page.errors, page.errors)

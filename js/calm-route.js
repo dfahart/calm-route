@@ -1474,14 +1474,16 @@ function update(fit, keepMap){
   const budget = +$('budget').value;
   const pick = practicePick(budget);
   state.pick = pick.route || null;
-  state.sel = state.manual || pick.route || calmestWithin(budget);
+  state.rec = pick.route || calmestWithin(budget);            // what Calm Route recommends, whatever the driver has tapped
+  state.sel = state.manual || state.rec;
   if (typeof renderScenicTrip === 'function') queueMicrotask(renderScenicTrip);
   $('budgetOut').textContent = budget === 0 ? 'None' : '+' + fmtDur(budget);
   $('budgetHint').textContent = budgetHintText(budget);
   const calmest = calmestOf(state.routes), usual = usualOf(state.routes);
   const simple = profile.view === 'simple';
   // Simple view compares just two: the calm pick first, then the fastest. Details lists every route, quickest first.
-  const sorted = simple ? [state.sel, ...(state.fast !== state.sel ? [state.fast] : [])] : [...state.routes].sort((a, b) => a.mins - b.mins);
+  // Always the same two cards, so the driver can tap back and forth: the recommendation, then the fastest
+  const sorted = simple ? [state.rec, ...(state.fast !== state.rec ? [state.fast] : [])] : [...state.routes].sort((a, b) => a.mins - b.mins);
   const dark = darkInfo();
   const focused = $('routes').contains(document.activeElement) ? document.activeElement.dataset.i : null;
   $('routes').innerHTML = sorted.map(r => {
@@ -1816,7 +1818,8 @@ $('budget').addEventListener('input', () => { state.manual = null; state.touched
 function selectRoute(i){
   const r = state.routes[i]; if (!r) return;
   state.manual = r; state.touched = true;
-  const s = $('budget'); s.value = Math.min(+s.max, Math.ceil(r.extra));
+  // Details: the slider follows your choice. Simple view hides the slider, so the recommendation stays put and both cards stay
+  if (profile.view !== 'simple'){ const s = $('budget'); s.value = Math.min(+s.max, Math.ceil(r.extra)); }
   update(false);
   const el = document.querySelector(`.route[data-i="${i}"]`); if (el) el.focus();
 }
@@ -1834,13 +1837,14 @@ $('wpN').addEventListener('change', () => { if (state.routes.length) setLink(); 
 function draw(fit){
   layer.clearLayers();
   const simple = profile.view === 'simple';   // simple view: only the recommended route on the map
-  if (!simple) state.routes.forEach(r => { if (r !== state.sel && r !== state.fast) L.polyline(r.shape, {color:'#9AAAB1', weight:4, opacity:.7}).addTo(layer); });
+  const shown = simple ? [...new Set([state.rec || state.sel, state.fast])] : state.routes;   // simple view: just the calm pick and the fastest
+  shown.forEach(r => { if (r !== state.sel && r !== state.fast) L.polyline(r.shape, {color:'#9AAAB1', weight:4, opacity:.7}).addTo(layer); });
   if (state.fast !== state.sel) L.polyline(state.fast.shape, {color:'#5E717B', weight:4, opacity:.9, dashArray:'7 8'}).addTo(layer);   // the fastest, dashed, for comparison
   L.polyline(state.sel.shape, {color:'#fff', weight:10, opacity:1, interactive:false}).addTo(layer);
   L.polyline(state.sel.shape, {color:'#2E6A8A', weight:6, opacity:1, interactive:false}).addTo(layer);
   // Click or tap a grey line on the map to pick that route (a wide invisible line makes it easy to hit)
-  if (!simple) state.routes.forEach((r, i) => {
-    if (r === state.sel) return;
+  state.routes.forEach((r, i) => {
+    if (r === state.sel || !shown.includes(r)) return;
     const hit = L.polyline(r.shape, {color:'#2E6A8A', weight:22, opacity:0, bubblingMouseEvents:false}).addTo(layer);
     hit.bindTooltip(r === state.fast ? 'Fastest route: click to choose' : 'Click to choose this route', {sticky:true});
     hit.on('mouseover', () => hit.setStyle({opacity:.25})).on('mouseout', () => hit.setStyle({opacity:0}));
