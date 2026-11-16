@@ -882,7 +882,7 @@ function showEnds(move = true){
 }
 
 const closers = [];
-function setupField(key){
+function setupField(key, pick){   // pick: a custom chooser (the profile's Home and Work boxes); otherwise the box is part of the trip
   const inp = $(key), box = $(key+'-s'); let timer, items = [], idx = -1, seq = 0, hint = '', more = false, empty = '';
   const render = () => {
     box.innerHTML = items.map((it, i) => `<div role="option" id="${key}-o${i}" aria-selected="${i===idx}" data-i="${i}">
@@ -898,11 +898,11 @@ function setupField(key){
   };
   const close = () => { items = []; idx = -1; empty = ''; render(); previewLayer.clearLayers(); };
   closers.push(() => { clearTimeout(timer); seq++; close(); });
-  const choose = i => { const it = items[i]; if (!it) return; state[key] = it;
+  const choose = i => { const it = items[i]; if (!it) return; if (pick){ close(); pick(it); return; } state[key] = it;
     if (/^[A-Z]{2}$/.test(it.cc || '') && it.cc !== homeCountry){ homeCountry = it.cc; try { localStorage.setItem('calmRouteCountry', it.cc); } catch(e){} } inp.value = label(it); close(); tripChanged(); showEnds(); prefetch();
     if (key === 'from' && !state.to && !$('to').value.trim()) $('to').focus(); };   // next step: where to
   inp.addEventListener('input', () => {
-    state[key] = null; clearTimeout(timer); tripChanged(); showEnds(false);
+    clearTimeout(timer); if (!pick){ state[key] = null; tripChanged(); showEnds(false); }
     const q = inp.value.trim(); if (q.length < 3){ close(); return; }
     const my = ++seq;
     timer = setTimeout(async () => {
@@ -915,7 +915,7 @@ function setupField(key){
         hint = res.hint != null ? res.hint : c && c.explicit ? `Showing matches near ${c.label}. Wrong place? Add the state, like “Portage, MI”.`
              : c ? `Showing matches near ${c.label}. Add a city for somewhere else, like “Meijer, Kalamazoo”.`
              : 'Add a city for closer matches, like “Meijer, Kalamazoo”, or use your location.';
-        render(); showPreview(items, choose);
+        render(); if (!pick) showPreview(items, choose);
         if ($('status').dataset.searchError){ setStatus(''); delete $('status').dataset.searchError; }
       } catch(e){
         if (my === seq){ setStatus(/Failed to fetch|NetworkError|Load failed|timeout|abort/i.test(e.message || '') ? NET_MSG : (e.message || 'Address search isn’t responding. Try again in a moment.'), true); $('status').dataset.searchError = '1'; }
@@ -939,7 +939,7 @@ function setupField(key){
       if (my !== seq) return;
       items = res.items; idx = -1; more = false; if (res.hint != null) hint = res.hint;
       if (items.length <= had) hint = 'That’s everything nearby. Add a city to search somewhere else, like “Meijer, Grand Rapids”.';
-      render(); showPreview(items, choose);
+      render(); if (!pick) showPreview(items, choose);
     } catch(err){ if (my === seq){ more = false; hint = err.message || 'Couldn’t load more places. Try again in a moment.'; render(); } }
   });
   inp.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== inp) close(); }, 200));
@@ -967,9 +967,7 @@ const slim = it => ({main:it.main, sub:it.sub || '', lat:it.lat, lon:it.lon, ful
 const samePlace = (a, b) => a && b && Math.abs(a.lat - b.lat) < 2e-4 && Math.abs(a.lon - b.lon) < 2e-4;
 function setPlace(key, it){ state[key] = {...it}; $(key).value = label(it); closeAllSuggestions(); tripChanged(); showEnds(); prefetch(); }
 function renderQuick(){
-  const chip = (id, name) => places[id]
-    ? `<span class="chip"><button type="button" data-go="${id}" title="${esc(label(places[id]))}">${name}</button><button type="button" class="x" data-forget="${id}" aria-label="Forget ${name}">×</button></span>`
-    : `<span class="chip unset"><button type="button" data-set="${id}">Set ${name.toLowerCase()}</button></span>`;
+  const chip = (id, name) => places[id] ? `<span class="chip"><button type="button" data-go="${id}" title="${esc(label(places[id]))}">${name}</button></span>` : '';
   const recent = places.recent.filter(r => !samePlace(r, places.home) && !samePlace(r, places.work)).slice(0, 3);
   $('quick').innerHTML = chip('home', 'Home') + chip('work', 'Work')
     + recent.map(r => {
@@ -982,13 +980,30 @@ $('quick').addEventListener('click', e => {
   const target = lastField || (state.to && !state.from ? 'from' : 'to');
   if (b.dataset.go){ setPlace(target, places[b.dataset.go]); setStatus(''); }
   else if (b.dataset.recent){ setPlace('to', places.recent[+b.dataset.recent]); setStatus(''); }
-  else if (b.dataset.forget){ places[b.dataset.forget] = null; savePlaces(); renderQuick(); }
-  else if (b.dataset.set){
-    const name = b.dataset.set, it = (lastField && state[lastField]) || state.to || state.from;
-    if (!it){ setStatus(`To save ${name}, first choose the place in one of the boxes above, then press “Set ${name}”.`); return; }
-    places[name] = it.here ? {main:name[0].toUpperCase() + name.slice(1), sub:'', lat:it.lat, lon:it.lon, full:null, hasNumber:false, coords:true} : slim(it);
-    savePlaces(); renderQuick();
-    setStatus(it.here ? `Saved where you are now as ${name}.` : `Saved ${it.main} as ${name}.`);
+});
+// Home and Work are set in the profile: search an address, or use where you are now. Saved straight away.
+function savePlace(name, it){
+  places[name] = it.here ? {main:name[0].toUpperCase() + name.slice(1), sub:'', lat:it.lat, lon:it.lon, full:null, hasNumber:false, coords:true} : slim(it);
+  savePlaces(); renderQuick(); renderPlaces(); $(name + 'In').value = label(places[name]);
+  $('placesNote').textContent = it.here ? `Saved where you are now as ${name}.` : `Saved ${it.main} as ${name}.`;
+}
+function renderPlaces(){
+  ['home', 'work'].forEach(n => { const inp = $(n + 'In'); if (document.activeElement !== inp) inp.value = places[n] ? label(places[n]) : '';
+    $('placesBox').querySelector(`[data-placeforget=${n}]`).hidden = !places[n]; });
+  const n = ['home', 'work'].filter(k => places[k]).length;
+  $('placesCount').textContent = n ? `${n} saved` : '';
+}
+setupField('homeIn', it => savePlace('home', it)); setupField('workIn', it => savePlace('work', it));
+$('placesBox').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.placeforget){ const n = b.dataset.placeforget; places[n] = null; savePlaces(); renderQuick(); renderPlaces(); $('placesNote').textContent = `Forgot ${n}.`; }
+  else if (b.dataset.placehere){
+    const n = b.dataset.placehere;
+    if (state.userLoc){ savePlace(n, state.userLoc); return; }
+    if (!navigator.geolocation){ $('placesNote').textContent = 'Your browser can’t share your location. Search the address instead.'; return; }
+    $('placesNote').textContent = 'Finding your location…';
+    navigator.geolocation.getCurrentPosition(p => savePlace(n, {main:'My location', lat:p.coords.latitude, lon:p.coords.longitude, here:true}),
+      () => { $('placesNote').textContent = 'Location isn’t available (it may be blocked for this page). Search the address instead.'; }, {timeout:10000, enableHighAccuracy:true, maximumAge:0});
   }
 });
 function rememberTrip(trip){
@@ -996,7 +1011,7 @@ function rememberTrip(trip){
   places.recent = [slim(trip.to), ...places.recent.filter(r => !samePlace(r, trip.to))].slice(0, 4);
   savePlaces(); renderQuick();
 }
-renderQuick();
+renderQuick(); renderPlaces();
 
 const LOOSE_FIX = 100;   // metres: beyond this a location fix can shift the trip's start by a block or more
 const fixText = m => m < 400 ? `${Math.round(m * 3.281 / 50) * 50} feet` : `${(m / 1609.34).toFixed(1)} miles`;
@@ -2210,7 +2225,6 @@ const STONE_H = [0, 36, 32, 23, 34, 29];   // height of each stone shape, for st
 function stone(x, y, k, shape, color, rot = 0, cls = ''){
   return `<g${cls ? ` class="${cls}"` : ''} transform="translate(${x} ${y}) rotate(${rot} 30 20) scale(${k})"><use href="#s${shape}" fill="url(#g-${color})"/><use href="#s${shape}" fill="url(#g-gloss)"/></g>`;
 }
-const ghostStone = (x, y, k, shape) => `<g transform="translate(${x} ${y}) scale(${k})"><use href="#s${shape}" fill="none" stroke="#AEBBB8" stroke-width="1.3" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/></g>`;
 const stoneShadow = (cx, cy, rx, ry) => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="url(#g-shadow)"/>`;
 // The heap of pebbles: up to 13 stones, filled from the middle of the bottom row up; the newest is apricot
 const HEAP = [[14,92,1.05,3,'basalt',-4],[70,96,1.1,5,'sand',3],[134,94,1.08,2,'slate',-2],[196,98,1,3,'jade',5],[244,96,.85,1,'rose',-6],
@@ -2242,7 +2256,7 @@ function stackSvg(level, key = 'merge', grew = false){
     if (i < level){
       if (grew && i === level - 1) out += `<ellipse class="newglow" cx="32" cy="${(yt + hh / 2).toFixed(1)}" rx="${(34 * k).toFixed(1)}" ry="${(hh * .9).toFixed(1)}" fill="url(#g-glow)"/>`;
       out += stone(x, sy, +k.toFixed(2), sh, cols[i], i % 2 ? -3 : 3, grew && i === level - 1 ? 'newstone' : '');
-    } else out += ghostStone(x, sy, +k.toFixed(2), sh);
+    }
     y = yt + hh * 0.2;
   }
   return `<svg viewBox="0 0 64 ${H}" aria-hidden="true">${out}</svg>`;
@@ -2262,7 +2276,7 @@ const KEEP_ICON = {
 const KEEP_COLOR = ['teal', 'apricot', 'jade', 'rose', 'sand'];
 function keepStone(k, i, got){
   const art = got ? stoneShadow(30, 38, 24, 4) + stone(0, 0, 1, 1, KEEP_COLOR[i % KEEP_COLOR.length])
-    + `<g transform="translate(18 9)" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${KEEP_ICON[k.id] || ''}</g>` : ghostStone(0, 0, 1, 1);
+    + `<g transform="translate(18 9)" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${KEEP_ICON[k.id] || ''}</g>` : '';
   return `<svg viewBox="0 0 60 42" width="56" height="40" aria-hidden="true">${art}</svg>`;
 }
 function renderPebbles(){
@@ -2272,11 +2286,11 @@ function renderPebbles(){
   $('pebbleSub').textContent = n ? `${plural(practice.drives, 'drive')} logged.` + (practice.on && psk ? ` ${psk.name} stack: ${levelOf(psk.key)} of 5.` : '') : (practice.on ? 'Practice is on. Log a drive to collect your first pebble.' : 'Collect a pebble for every drive you log');
   $('pebbleIcon').innerHTML = miniPile(n);
   $('pebbleHeap').innerHTML = n ? heapSvg(n) + `<p class="heapn">${n}</p><p class="heaps">${n === 1 ? 'pebble' : 'pebbles'}${practice.drives ? ` from ${plural(practice.drives, 'drive')}` : ''}</p>`
-    : `<svg viewBox="0 0 60 42" width="72" height="50" aria-hidden="true">${ghostStone(0, 0, 1, 4)}</svg><p class="heaps">Your first pebble comes after your first drive.</p>`;
+    : `<p class="heaps">Your first pebble comes after your first drive.</p>`;
   $('pebbleState').textContent = $('pebbleCard').open ? 'Close' : 'Open';
   $('practiceOn').checked = !!practice.on;
   $('practiceSkill').innerHTML = SKILLS.map(sk => `<option value="${sk.key}"${sk.key === practice.skill ? ' selected' : ''}>${esc(sk.long[0].toUpperCase() + sk.long.slice(1))}</option>`).join('');
-  $('practiceSkill').disabled = !practice.on;
+  $('practiceSkill').disabled = !practice.on; $('practiceWhat').hidden = !practice.on;
   $('stacks').innerHTML = SKILLS.map(sk => { const L = levelOf(sk.key);
     return `<div class="stack${practice.on && sk.key === practice.skill ? ' active' : ''}" data-skill="${sk.key}" data-level="${L}">${stackSvg(L, sk.key)}<b>${sk.name}</b><span>${L} of 5<span class="sr"> stones</span></span></div>`; }).join('');
   const t = practice.totals, bits = [];
@@ -2288,7 +2302,7 @@ function renderPebbles(){
   const got = KEEPSAKES.filter(k => practice.keepsakes.includes(k.id));
   $('keeps').innerHTML = `<p class="keephead"><b>Keepsakes</b> <span>${got.length} of ${KEEPSAKES.length} found</span></p><div class="keepgrid">`
     + KEEPSAKES.map((k, i) => got.includes(k) ? `<div class="keep">${keepStone(k, i, true)}<span>${esc(k.name)}</span></div>` : '').join('')
-    + (got.length < KEEPSAKES.length ? `<div class="keep missing">${keepStone(null, 0, false)}<span>${KEEPSAKES.length - got.length} more to find</span></div>` : '') + '</div>';
+    + '</div>' + (got.length < KEEPSAKES.length ? `<p class="ptext keepmore">${got.length ? `${KEEPSAKES.length - got.length} more to find.` : 'Keepsakes are special stones for firsts, like your first drive.'}</p>` : '');
   $('pebbleReset').style.display = practice.drives || practice.levels ? '' : 'none';
 }
 $('pebbleCard').addEventListener('toggle', renderPebbles);
@@ -2306,7 +2320,7 @@ function noteDriveStarted(app){
   const followed = app !== 'waze';
   practice.pending = {at:Date.now(), to:state.trip.to.main, name:followed ? r.name : 'Waze’s own route', mins:Math.round(r.mins),
     m:followed ? {merges:r.merges, lefts:r.uLefts, bridges:r.bridges, hwMiles:+r.hwMiles.toFixed(1), busy:+(r.busyMiles + r.hwMiles).toFixed(1), turns:r.turns} : {},
-    practice: followed && state.pick === r ? practice.skill : null,
+    practice: followed && state.pick === r ? practice.skill : null, practiceOn: followed && !!practice.on,
     route: followed ? {from:[+state.trip.from.lat.toFixed(5), +state.trip.from.lon.toFixed(5)], to:[+state.trip.to.lat.toFixed(5), +state.trip.to.lon.toFixed(5)], pts:samplePts(r), trusted:trustOf(r) ? trustOf(r).id : null} : null};
   savePractice();
 }
@@ -2368,8 +2382,8 @@ function logDrive(feel){
   practice.pending = null;
   if (feel === 'none'){ savePractice(); renderAsk(); return; }
   const m = p.m || {}, val = {merge:m.merges, left:m.lefts, boxed:m.busy, bridge:m.bridges, turns:m.turns};
-  const earned = 1 + (p.practice ? 1 : 0), grew = [];
-  practice.drives++; practice.pebbles += earned; if (p.practice) practice.practiceDrives++;
+  const practiced = !!(p.practice || p.practiceOn), earned = practiced ? 2 : 1, grew = [];   // one pebble a drive, two with practice mode on
+  practice.drives++; practice.pebbles += earned; if (practiced) practice.practiceDrives++;
   practice.totals.merges += m.merges || 0; practice.totals.lefts += m.lefts || 0; practice.totals.bridges += m.bridges || 0; practice.totals.hwMiles += m.hwMiles || 0;
   // A drive that went past your usual for a skill counts toward that stack: fine twice adds a stone, rough just starts the count again
   if (!practice.levels) practice.levels = Object.fromEntries(SKILLS.map(sk => [sk.key, levelOf(sk.key)]));
@@ -2389,7 +2403,7 @@ function logDrive(feel){
   const lead = feel === 'fine' ? '' : feel === 'tense' ? 'A bit tense is what a small step feels like. ' : 'Rough drives still count, and nothing is lost. ';
   const trustNote = p.route && feel === 'fine' ? ' I’ll remember this route and offer it first next time you make this trip.'
     : p.route && p.route.trusted && feel === 'rough' ? ' I won’t offer this route first any more.' : '';
-  renderAsk({title, earned, why: p.practice ? 'One for the drive, one for practicing.' : 'One for the drive.', grew, fresh,
+  renderAsk({title, earned, why: practiced ? 'One for the drive, one for practicing.' : 'One for the drive.', grew, fresh,
     text: (lead + trustNote).trim(), suggest: feel === 'fine' ? null : profileHint()});
 }
 $('routes').addEventListener('click', e => {

@@ -48,33 +48,12 @@
           <h1>Calm Route</h1>
           <p>Fewer stressful moments, still on time.</p>
         </div>
+        <button class="profbtn" id="editProfile" type="button"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="sr">Your driving profile: </span><span class="sr" id="profileSummary"></span></button>
       </header>
       <p class="daily" id="daily" hidden></p>
 
       <div class="driveask" id="driveAsk" role="status" aria-live="polite" hidden></div>
 
-      <button class="profile-pill" id="editProfile" type="button">
-        <span><span class="who">Your comfort profile</span><span class="what" id="profileSummary"></span></span>
-        <span class="edit">Edit</span>
-      </button>
-
-      <details class="pebbles" id="pebbleCard">
-        <summary>
-          <span class="minipile" id="pebbleIcon" aria-hidden="true"></span>
-          <span><span class="who" id="pebbleCount"></span><span class="what" id="pebbleSub"></span></span>
-          <span class="edit" id="pebbleState"></span>
-        </summary>
-        <div class="pebble-body">
-          <div class="heap" id="pebbleHeap"></div>
-          <label class="switch"><input type="checkbox" id="practiceOn" role="switch"><span>Practice mode</span></label>
-          <p class="ptext">Practice picks a route with one small step more of the thing you choose, and keeps everything else calm. Go at your own pace. Nothing is ever lost.</p>
-          <div class="prow"><label for="practiceSkill">Practice</label><select id="practiceSkill"></select></div>
-          <div class="stacks" id="stacks"></div>
-          <p class="ptext" id="pebbleTotals"></p>
-          <div class="keeps" id="keeps" role="group" aria-label="Keepsakes"></div>
-          <button class="ghost" type="button" id="pebbleReset">Start over</button>
-        </div>
-      </details>
 
       <form id="form" autocomplete="off" novalidate>
         <div class="trip">
@@ -100,11 +79,31 @@
         </div>
         <div class="quick" id="quick" role="group" aria-label="Saved and recent places"></div>
         <p class="ptext" id="svcBar" hidden>Free demo map servers: address search is limited. <button type="button" class="ghost" id="svcBarBtn" style="font-size:14px;padding:0">Add your Stadia Maps key</button></p>
-        <div class="needgas" role="group" aria-label="Need gas on the way"><label class="switch"><input type="checkbox" id="needGas" role="switch"><span>Need gas? Stop at the easiest station near the start</span></label><label class="switch"><input type="checkbox" id="needFood" role="switch"><span>Need food? Stop at the easiest drive-thru near the start</span></label></div>
+        <div class="needgas" role="group" aria-label="Need gas on the way"><label class="switch"><input type="checkbox" id="needGas" role="switch"><span>Need gas on the way</span></label><label class="switch"><input type="checkbox" id="needFood" role="switch"><span>Need food? Stop at the easiest drive-thru near the start</span></label></div>
+        <div class="practicerow">
+          <label class="switch"><input type="checkbox" id="practiceOn" role="switch"><span>Practice mode</span></label>
+          <div class="prow" id="practiceWhat" hidden><label for="practiceSkill">Practice</label><select id="practiceSkill"></select></div>
+          <p class="ptext" id="practiceHelp">A route with one small step more of something you’re working on, everything else kept calm. Two pebbles a drive.</p>
+        </div>
         <button class="btn btn-primary find" id="find" type="submit">Find calm routes</button>
         <div class="progress" aria-hidden="true"><i id="bar"></i></div>
         <p class="status" id="status" role="status" aria-live="polite"></p>
       </form>
+
+      <details class="pebbles" id="pebbleCard">
+        <summary>
+          <span class="minipile" id="pebbleIcon" aria-hidden="true"></span>
+          <span><span class="who" id="pebbleCount"></span><span class="what" id="pebbleSub"></span></span>
+          <span class="edit" id="pebbleState"></span>
+        </summary>
+        <div class="pebble-body">
+          <div class="heap" id="pebbleHeap"></div>
+          <div class="stacks" id="stacks"></div>
+          <p class="ptext" id="pebbleTotals"></p>
+          <div class="keeps" id="keeps" role="group" aria-label="Keepsakes"></div>
+          <button class="ghost" type="button" id="pebbleReset">Start over</button>
+        </div>
+      </details>
 
       <details class="scenic" id="scenicBox">
         <summary>Scenic drive <span>No destination? Pick a length and get a calm drive to a park, lake or preserve.</span></summary>
@@ -223,6 +222,15 @@
     <p class="lede">A few quick answers. Routes are scored around them, and you can change them anytime.</p>
     <div id="quizBody"></div>
     <div id="quizLikes"></div>
+    <details class="psection" id="placesBox"><summary>Home and work <span class="count" id="placesCount"></span></summary>
+      <div class="placerow"><label for="homeIn">Home</label>
+        <div class="field"><input id="homeIn" placeholder="Search your home address" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="homeIn-s" autocomplete="off"><div class="sugg" id="homeIn-s" role="listbox" aria-label="Home address suggestions"></div></div>
+        <div class="placebtns"><button type="button" class="ghost" data-placehere="home">Use where I am now</button><button type="button" class="ghost" data-placeforget="home">Forget</button></div></div>
+      <div class="placerow"><label for="workIn">Work</label>
+        <div class="field"><input id="workIn" placeholder="Search your work address" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="workIn-s" autocomplete="off"><div class="sugg" id="workIn-s" role="listbox" aria-label="Work address suggestions"></div></div>
+        <div class="placebtns"><button type="button" class="ghost" data-placehere="work">Use where I am now</button><button type="button" class="ghost" data-placeforget="work">Forget</button></div></div>
+      <p class="ptext" id="placesNote" role="status" aria-live="polite">Saved only in this browser. They show as one-tap buttons when you plan a trip.</p>
+    </details>
     <details class="psection fuelbox" id="fuelBox">
       <summary>Your car and gas cost <span class="opt">optional</span></summary>
       <label class="switch"><input type="checkbox" id="fuelOn" role="switch"><span>Show gas cost on each route</span></label>

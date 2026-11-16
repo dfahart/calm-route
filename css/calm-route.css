@@ -439,3 +439,24 @@ legend{font-weight:700;margin-bottom:8px;padding:0}
 /* destination marker: an apricot pebble */
 .map-dest{width:26px;height:20px;border-radius:50%;background:var(--pebble);border:3px solid #fff;transform:rotate(-14deg);box-shadow:0 2px 6px rgba(20,40,38,.35);box-sizing:border-box}
 .pin.end::before{background:var(--lake)}
+
+/* profile button in the header */
+.profbtn{margin-left:auto;align-self:flex-start;flex:none;width:44px;height:44px;border-radius:14px;border:0;background:var(--paper);color:var(--ink);
+  display:grid;place-items:center;cursor:pointer;box-shadow:0 1px 3px rgba(20,40,38,.1)}
+.profbtn:hover{color:var(--lake)}
+/* practice mode sits with Need gas on the planner */
+.practicerow{margin:0 0 6px}
+.practicerow .switch{margin-top:6px}
+.practicerow .ptext{margin:2px 0 0 52px;font-size:13px}
+.practicerow .prow{margin:8px 0 0 52px}
+.needgas + .practicerow{margin-top:0}
+/* the pebble card now follows the planner */
+#form + .pebbles, .pebbles{margin-top:14px}
+.keepmore{margin:8px 0 0}
+/* home and work in the profile */
+.placerow{display:grid;grid-template-columns:52px 1fr;gap:4px 10px;align-items:center;margin:0 0 12px}
+.placerow > label{font-weight:700}
+.placerow .placebtns{grid-column:2;display:flex;gap:16px;flex-wrap:wrap}
+.placerow .placebtns .ghost{font-size:14px}
+.practicerow [hidden]{display:none !important}
+.needgas{margin-bottom:0}

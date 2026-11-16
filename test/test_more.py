@@ -776,9 +776,9 @@ with sync_playwright() as p:
     page.evaluate("$('pebbleCard').open = true"); page.wait_for_timeout(200)
     check("the pebble card shows a little pile of stones", page.locator("#pebbleIcon svg use[href='#s1'], #pebbleIcon svg use[href='#s2'], #pebbleIcon svg use[href='#s4'], #pebbleIcon svg use[href='#s5']").count() >= 4)
     check("the heap shows up to 13 stones and the count", page.locator("#pebbleHeap svg g").count() == 13 and page.text_content("#pebbleHeap .heapn") == "23")
-    check("each stack has its stones, with dashed outlines for the ones to come",
-          page.evaluate("[...document.querySelectorAll('#stacks .stack')].map(s => [s.querySelectorAll('use[fill^=\"url(#g-\"]:not([fill=\"url(#g-gloss)\"])').length, s.querySelectorAll('use[stroke-dasharray]').length])") == [[3, 2], [2, 3], [1, 4], [2, 3], [4, 1]])
-    check("found keepsakes are stones with a picture, plus one outline for the rest", page.locator("#keeps .keep:not(.missing)").count() == 3 and "7 more to find" in page.text_content("#keeps .keep.missing"))
+    check("each stack shows just its stones (no dashed outlines)",
+          page.evaluate("[...document.querySelectorAll('#stacks .stack')].map(s => [s.querySelectorAll('use[fill^=\"url(#g-\"]:not([fill=\"url(#g-gloss)\"])').length, s.querySelectorAll('use[stroke-dasharray]').length])") == [[3, 0], [2, 0], [1, 0], [2, 0], [4, 0]])
+    check("found keepsakes are stones with a picture, and the rest are a line of text", page.locator("#keeps .keep").count() == 3 and "7 more to find" in page.text_content("#keeps .keepmore") and page.locator("#pebbleCard [stroke-dasharray]").count() == 0)
     check("the stone colours come from the page (no broken fills)", page.evaluate("['g-slate','g-sand','g-jade','g-rose','g-basalt','g-teal','g-apricot','g-gloss','g-glow','s1','s5'].every(id => document.getElementById(id))"))
     page.evaluate("""practice.pending = {at:Date.now() - 9e5, to:'Walmart', name:'via Gull Rd', mins:22, practice:true, m:{merges:3, lefts:0, busy:0, bridges:0, turns:3}};
         practice.fine = {merge:1}; practiceCfg.askAfter = 0; renderAsk();""")
@@ -786,6 +786,12 @@ with sync_playwright() as p:
     check("after a drive, the new stones land on the heap", page.locator("#driveAsk .earned .newstone").count() == 2 and "+2 pebbles" in page.text_content("#driveAsk .plus"))
     check("a stack that grew shows its new stone", page.locator("#driveAsk .won .newstone").count() == 1 and "merges stack grew to 4 stones" in page.text_content("#driveAsk"), page.text_content("#driveAsk"))
     check("no errors with the stones", not page.errors, page.errors)
+    # One pebble a drive; two whenever practice mode is on (even if this trip had no practice route)
+    for on, want in ((True, 2), (False, 1)):
+        page.evaluate(f"""practice.on = {str(on).lower()}; const p0 = practice.pebbles; state.sel = state.sel || null;
+            practice.pending = {{at:Date.now() - 9e5, to:'Walmart', name:'x', mins:22, m:{{}}, practice:null, practiceOn:{str(on).lower()}}}; renderAsk(); window.__p0 = p0;""")
+        page.click("#driveAsk [data-feel=fine]")
+        check(f"practice mode {'on' if on else 'off'}: {want} pebble{'s' if want > 1 else ''} for a drive", page.evaluate("practice.pebbles - window.__p0") == want)
     page.context.close()
     page = T.new_page(b, profile={}, init_script=init)
     page.emulate_media(reduced_motion="reduce")
