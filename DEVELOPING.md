@@ -63,8 +63,9 @@ Conventions:
 
 ## How changes go live
 
-The repository is `github.com/dfahart/calm-route`, and the site is GitHub Pages from the `main` branch.
-Pushing to `main` updates https://dfahart.github.io/calm-route/ in about a minute. Workflow:
+The repository is `github.com/dfahart/cr-preview-aa43e490` (renamed 2026-11-17 so an earlier shared link stops working), and the
+site is GitHub Pages from the `main` branch. Pushing to `main` updates the site at `dfahart.github.io/<repository name>/` in about a
+minute; the address is deliberately not written in public files. Workflow:
 
 1. Make the change, with its tests.
 2. Run both test batches; everything must pass.

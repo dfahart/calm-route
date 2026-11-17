@@ -15,7 +15,7 @@ make the app think a road has no traffic light where it does, so the old file mu
 import json, math, sys, time, urllib.parse, urllib.request
 
 SERVERS = ["https://overpass-api.de", "https://overpass.kumi.systems", "https://overpass.private.coffee"]
-AGENT = "CalmRoute-signal-refresh/2 (monthly; github.com/dfahart/calm-route)"
+AGENT = "CalmRoute-signal-refresh/2 (monthly; github.com/dfahart)"
 
 
 def fetch_tile(s, w, n, e):

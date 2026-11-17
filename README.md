@@ -3,7 +3,7 @@
 A route planner for anxious drivers. It finds the least stressful way to drive somewhere, scored around each
 driver's own worries, then hands the trip to Google Maps, Apple Maps or Waze.
 
-**Live (private test link):** https://dfahart.github.io/calm-route/
+**Live:** a private test link, shared directly by David (not listed here on purpose).
 
 The full design, every rule and every decision is in the spec doc ("Calm Route: Product Spec").
 The pre-launch checklist is in "Calm Route: What We're Missing".
